@@ -1588,7 +1588,20 @@ ${c.remark||''}</textarea>
         >
           Save Customer Info
         </button>
-
+${currentUser?.role==='owner'
+  ?
+  `
+    <button
+      type="button"
+      class="btn danger"
+      onclick="deleteCustomer('${c.id}')"
+    >
+      🗑️ 删除这个顾客
+    </button>
+  `
+  :
+  ''
+}
         <div class="section">
 
           <b>
@@ -3993,6 +4006,76 @@ function openCustomer(){
 
 }
 
+async function deleteCustomer(customerId){
+
+  if(currentUser?.role!=='owner'){
+    return toast('只有 Owner 可以删除顾客');
+  }
+
+  const customer=
+    data.customers.find(
+      c=>c.id===customerId
+    );
+
+  if(!customer)return;
+
+  const ok=
+    confirm(
+      `确定要删除顾客「${customer.name}」吗？\n\n`+
+      `顾客资料、预约、订单、配套余额及使用记录都会一起删除。\n\n`+
+      `这个操作不能恢复。`
+    );
+
+  if(!ok)return;
+
+  data.customers=
+    data.customers.filter(
+      c=>c.id!==customerId
+    );
+
+  data.appointments=
+    data.appointments.filter(
+      a=>a.customerId!==customerId
+    );
+
+  data.orders=
+    data.orders.filter(
+      o=>o.customerId!==customerId
+    );
+
+  data.packages=
+    data.packages.filter(
+      p=>p.customerId!==customerId
+    );
+
+  data.usage=
+    data.usage.filter(
+      u=>u.customerId!==customerId
+    );
+
+  try{
+
+    await save();
+
+    closeModal();
+
+    render();
+
+    toast(
+      `顾客「${customer.name}」已删除`
+    );
+
+  }catch(err){
+
+    console.error(err);
+
+    alert(
+      '删除失败，请检查数据库连接。'
+    );
+
+  }
+
+}
 
 function addCustomer(e){
 
