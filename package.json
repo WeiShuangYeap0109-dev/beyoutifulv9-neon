@@ -1,0 +1,8 @@
+{
+  "name": "beyoutifulv9-neon",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@neondatabase/serverless": "latest"
+  }
+}
