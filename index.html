@@ -589,10 +589,15 @@ if(savedUser&&ACCOUNTS[savedUser.key]&&ACCOUNTS[savedUser.key].role===savedUser.
 (async()=>{
   try{
     await loadData();
-    applyPermissions();renderNav();render();
-
-    document.getElementById('loginError').style.display='block';
-  document.getElementById('loginError').textContent='系统载入失败，请查看 Console 错误';
+    applyPermissions();
+    renderNav();
+    render();
+  }catch(err){
+    console.error(err);
+    const loginError=document.getElementById('loginError');
+    loginError.style.display='block';
+    loginError.textContent='系统载入失败，请查看 Console 错误';
+  }
 })();
 </script>
 </body>
