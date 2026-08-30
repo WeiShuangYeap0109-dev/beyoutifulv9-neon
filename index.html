@@ -148,7 +148,284 @@ function openOrder(){orderServiceCount=1;openModal('New Order',`<form class="for
 function addOrderService(){if(orderServiceCount>=2)return toast('一次 Order 最多 2 个 Service');orderServiceCount=2;$('orderServiceList').insertAdjacentHTML('beforeend',orderServiceRow(2,true));$('addServiceBtn').style.display='none';refreshOrder()}function removeOrderService(){if(orderServiceCount!==2)return;$('orderServiceBox2')?.remove();orderServiceCount=1;$('addServiceBtn').style.display='block';refreshOrder()}
 function getPackageBalance(cid,sn){return data.packages.filter(p=>p.customerId===cid&&p.packageType!=='value'&&p.service===sn).reduce((n,p)=>n+Math.max(0,Number(p.times||0)-Number(p.used||0)),0)}
 function renderOrderTotals(original){const discount=Math.min(original,Math.max(0,Number($('oDiscount')?.value||0))),final=Math.max(0,original-discount);$('orderTotals').innerHTML=`<div class="final-total"><div><span>Original Price</span><b>${money(original)}</b></div><div><span>Discount</span><b>${money(discount)}</b></div><div class="grand"><span>Final Amount</span><b>${money(final)}</b></div></div>`}function refreshOrderTotals(){const o=getOrderItems().reduce((n,i)=>n+Number(service(i.service).price||0),0);if($('orderTotals'))renderOrderTotals(o)}
-function refreshOrder(){const f=$('orderFields');if(!f)return;const b=billingType(),items=getOrderItems();if(!items.length)return;if(b==='single'){const original=items.reduce((n,i)=>n+Number(service(i.service).price||0),0);f.innerHTML=`<div class="summary">${items.map(i=>`<div><span>${esc(i.service)}</span><b>${money(service(i.service).price)}</b></div><div><span>Serve By</span><b>${esc(i.staff)}</b></div>`).join('')}</div><div class="field"><label>Discount（折扣，可不填）</label><input id="oDiscount" type="number" min="0" step="0.01" placeholder="没有折扣就留空" oninput="refreshOrderTotals()"></div><div id="orderTotals"></div>`;renderOrderTotals(original);return}if(items.length>1){f.innerHTML='<div class="summary"><div><span>注意</span><b>Package Billing 一次只能选择 1 个 Service</b></div><div class="muted">如果顾客今天做两个不同项目，请选择「单次使用」。</div></div>';$('orderSubmit').disabled=true;return}$('orderSubmit').disabled=false;const item=items[0],s=service(item.service),bal=getPackageBalance($('oCustomer').value,item.service);if(b==='package_buy'){f.innerHTML=`<div class="field"><label>配套类型</label><select id="pType" onchange="refreshPackageSummary()"><option value="times">次数配套</option><option value="value">Value 配套 · Any Service</option></select></div><div class="two"><div class="field"><label>购买次数</label><input id="pTimes" type="number" min="1" value="3" oninput="refreshPackageSummary()"></div><div class="field"><label>配套售价</label><input id="pPrice" type="number" min="0" step="0.01" placeholder="例如 288" oninput="refreshPackageSummary()"></div></div><div id="valueFields" style="display:none"><div class="two"><div class="field"><label>购买 Value</label><input id="pValue" type="number" min="0" step="0.01" oninput="refreshPackageSummary()"></div><div class="field"><label>赠送 Value</label><input id="pBonusValue" type="number" min="0" step="0.01" oninput="refreshPackageSummary()"></div></div><div class="field"><label>Total PKG Value</label><input id="pTotalValue" type="number" min="0" step="0.01" oninput="refreshPackageSummary()"></div></div><div id="packageSummary" class="summary"></div>`;refreshPackageSummary();return}const valuePkgs=data.packages.filter(p=>p.customerId===$('oCustomer').value&&p.packageType==='value'&&Number(p.valueBalance||0)>0),valueBal=valuePkgs.reduce((n,p)=>n+Number(p.valueBalance||0),0),canTimes=bal>0,canValue=valuePkgs.length>0;f.innerHTML=(canTimes&&canValue?'<div class="field"><label>使用配套类型</label><select id="usePackageType" onchange="refreshOrder()"><option value="times">次数配套</option><option value="value">Value 配套</option></select></div>':'')+'<div id="packageUseSummary" class="summary"></div>';const mode=$('usePackageType')?.value||(canTimes?'times':'value');if(mode==='times'&&canTimes)$('packageUseSummary').innerHTML=`<div><span>项目</span><b>${esc(item.service)}</b></div><div><span>Serve By</span><b>${esc(item.staff)}</b></div><div><span>本次使用</span><b>1 次</b></div><div><span>使用后次数余额</span><b>${bal-1} 次</b></div><div><span>本次收费</span><b>RM 0.00</b></div>`;else if(canValue)$('packageUseSummary').innerHTML=`<div><span>项目</span><b>${esc(item.service)}</b></div><div><span>Pkg Value Balance</span><b>${money(valueBal)}</b></div><div class="field"><label>本次使用 Value（自己填写）</label><input id="useValue" type="number" min="0" step="0.01" value="${Number(s.price||0)}" oninput="refreshUseValue()"></div><div id="useValueSummary"><div><span>使用后 Pkg Value</span><b>${money(Math.max(0,valueBal-Number(s.price||0)))}</b></div></div><div><span>本次收费</span><b>RM 0.00</b></div>`;else $('packageUseSummary').innerHTML='<div class="muted">该顾客没有可使用的配套。</div>';$('orderSubmit').disabled=!(canTimes||canValue)}
+function refreshOrder(){
+  const f=$('orderFields');
+  if(!f)return;
+
+  const b=billingType();
+  const items=getOrderItems();
+  if(!items.length)return;
+
+  if(b==='single'){
+    const original=items.reduce((n,i)=>n+Number(service(i.service).price||0),0);
+
+    f.innerHTML=`
+      <div class="summary">
+        ${items.map(i=>`
+          <div><span>${esc(i.service)}</span><b>${money(service(i.service).price)}</b></div>
+          <div><span>Serve By</span><b>${esc(i.staff)}</b></div>
+        `).join('')}
+      </div>
+
+      <div class="field">
+        <label>Discount（折扣，可不填）</label>
+        <input id="oDiscount"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="没有折扣就留空"
+          oninput="refreshOrderTotals()">
+      </div>
+
+      <div id="orderTotals"></div>
+    `;
+
+    renderOrderTotals(original);
+    return;
+  }
+
+  if(items.length>1){
+    f.innerHTML=`
+      <div class="summary">
+        <div>
+          <span>注意</span>
+          <b>Package Billing 一次只能选择 1 个 Service</b>
+        </div>
+        <div class="muted">
+          如果顾客今天做两个不同项目，请选择「单次使用」。
+        </div>
+      </div>
+    `;
+
+    $('orderSubmit').disabled=true;
+    return;
+  }
+
+  $('orderSubmit').disabled=false;
+
+  const item=items[0];
+  const s=service(item.service);
+  const cid=$('oCustomer').value;
+
+  const bal=getPackageBalance(cid,item.service);
+
+  const valuePkgs=data.packages.filter(
+    p=>p.customerId===cid &&
+       p.packageType==='value' &&
+       Number(p.valueBalance||0)>0
+  );
+
+  const valueBal=valuePkgs.reduce(
+    (n,p)=>n+Number(p.valueBalance||0),
+    0
+  );
+
+  const canTimes=bal>0;
+  const canValue=valuePkgs.length>0;
+
+  /*
+   * 重点：
+   * 先记住顾客刚刚选择的是 times 还是 value。
+   * 不可以等 innerHTML 重建以后才读取，
+   * 否则每次都会自动回到 times。
+   */
+  const selectedMode=$('usePackageType')?.value || null;
+
+  if(b==='package_buy'){
+    f.innerHTML=`
+      <div class="field">
+        <label>配套类型</label>
+        <select id="pType" onchange="refreshPackageSummary()">
+          <option value="times">次数配套</option>
+          <option value="value">Value 配套 · Any Service</option>
+        </select>
+      </div>
+
+      <div class="two">
+        <div class="field">
+          <label>购买次数</label>
+          <input id="pTimes"
+            type="number"
+            min="1"
+            value="3"
+            oninput="refreshPackageSummary()">
+        </div>
+
+        <div class="field">
+          <label>配套售价</label>
+          <input id="pPrice"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="例如 288"
+            oninput="refreshPackageSummary()">
+        </div>
+      </div>
+
+      <div id="valueFields" style="display:none">
+        <div class="two">
+          <div class="field">
+            <label>购买 Value</label>
+            <input id="pValue"
+              type="number"
+              min="0"
+              step="0.01"
+              oninput="refreshPackageSummary()">
+          </div>
+
+          <div class="field">
+            <label>赠送 Value</label>
+            <input id="pBonusValue"
+              type="number"
+              min="0"
+              step="0.01"
+              oninput="refreshPackageSummary()">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Total PKG Value</label>
+          <input id="pTotalValue"
+            type="number"
+            min="0"
+            step="0.01"
+            oninput="refreshPackageSummary()">
+        </div>
+      </div>
+
+      <div id="packageSummary" class="summary"></div>
+    `;
+
+    refreshPackageSummary();
+    return;
+  }
+
+  /*
+   * 使用配套
+   *
+   * 如果顾客同时拥有：
+   * ① 深层清洁次数配套
+   * ② Value 配套
+   *
+   * 两个都会显示，让 Belle 可以自己选择。
+   */
+
+  let packageSelector='';
+
+  if(canTimes && canValue){
+    packageSelector=`
+      <div class="field">
+        <label>使用配套类型</label>
+
+        <select id="usePackageType" onchange="refreshOrder()">
+          <option value="times">次数配套</option>
+          <option value="value">Value 配套</option>
+        </select>
+      </div>
+    `;
+  }
+
+  f.innerHTML=`
+    ${packageSelector}
+
+    <div id="packageUseSummary" class="summary"></div>
+  `;
+
+  /*
+   * 这里是修复重点。
+   *
+   * 如果顾客刚刚选择 Value，
+   * refreshOrder() 重建 HTML 后，
+   * 要把 Value 重新选回来。
+   */
+  const useMode=
+    selectedMode ||
+    (canTimes ? 'times' : 'value');
+
+  const selector=$('usePackageType');
+
+  if(selector && (useMode==='times' || useMode==='value')){
+    selector.value=useMode;
+  }
+
+  if(useMode==='times' && canTimes){
+
+    $('packageUseSummary').innerHTML=`
+      <div>
+        <span>项目</span>
+        <b>${esc(item.service)}</b>
+      </div>
+
+      <div>
+        <span>Serve By</span>
+        <b>${esc(item.staff)}</b>
+      </div>
+
+      <div>
+        <span>本次使用</span>
+        <b>1 次</b>
+      </div>
+
+      <div>
+        <span>使用后次数余额</span>
+        <b>${bal-1} 次</b>
+      </div>
+
+      <div>
+        <span>本次收费</span>
+        <b>RM 0.00</b>
+      </div>
+    `;
+
+  }else if(useMode==='value' && canValue){
+
+    $('packageUseSummary').innerHTML=`
+      <div>
+        <span>项目</span>
+        <b>${esc(item.service)}</b>
+      </div>
+
+      <div>
+        <span>Pkg Value Balance</span>
+        <b>${money(valueBal)}</b>
+      </div>
+
+      <div class="field">
+        <label>本次使用 Value（自己填写）</label>
+
+        <input id="useValue"
+          type="number"
+          min="0"
+          step="0.01"
+          value="${Number(s.price||0)}"
+          oninput="refreshUseValue()">
+      </div>
+
+      <div id="useValueSummary">
+        <div>
+          <span>使用后 Pkg Value</span>
+          <b>${money(Math.max(0,valueBal-Number(s.price||0)))}</b>
+        </div>
+      </div>
+
+      <div>
+        <span>本次收费</span>
+        <b>RM 0.00</b>
+      </div>
+    `;
+
+  }else{
+
+    $('packageUseSummary').innerHTML=`
+      <div class="muted">
+        该顾客没有可使用的配套。
+      </div>
+    `;
+
+  }
+
+  $('orderSubmit').disabled=!(canTimes||canValue);
+}
 function refreshUseValue(){const box=$('useValueSummary');if(!box)return;const bal=data.packages.filter(p=>p.customerId===$('oCustomer').value&&p.packageType==='value').reduce((n,p)=>n+Number(p.valueBalance||0),0),v=Math.max(0,Number($('useValue').value||0));box.innerHTML=`<div><span>使用后 Pkg Value</span><b>${money(Math.max(0,bal-v))}</b></div>`}
 function refreshPackageSummary(){const i=getOrderItems()[0];if(!i)return;const s=service(i.service),type=$('pType')?.value||'times';$('valueFields').style.display=type==='value'?'block':'none';if(type==='value'){const buy=Number($('pValue')?.value||0),bonus=Number($('pBonusValue')?.value||0),total=Number($('pTotalValue')?.value||0)||buy+bonus;$('packageSummary').innerHTML=`<div><span>适用项目</span><b>Any Service</b></div><div><span>购买 Value</span><b>${money(buy)}</b></div><div><span>赠送 Value</span><b>${money(bonus)}</b></div><div><span>Total PKG Value</span><b>${money(total)}</b></div><div><span>实际售价</span><b>${money($('pPrice').value)}</b></div>`}else{const times=Math.max(1,Number($('pTimes').value||1)),price=Number($('pPrice').value||0);$('packageSummary').innerHTML=`<div><span>项目</span><b>${esc(i.service)}</b></div><div><span>单次原价</span><b>${money(s.price)}</b></div><div><span>原价总额</span><b>${money(s.price*times)}</b></div><div><span>配套售价</span><b>${money(price)}</b></div><div><span>每次实际成本</span><b>${money(price/times)}</b></div>`}}
 async function completeOrder(e){e.preventDefault();const customer=data.customers.find(c=>c.id===$('oCustomer').value),b=billingType();if(!customer)return toast('请选择顾客');const items=getOrderItems();if(!items.length)return toast('请选择至少一个 Service');if(b==='single'){const orderItems=items.map(i=>({service:i.service,staff:i.staff,amount:Number(service(i.service).price||0)})),original=orderItems.reduce((n,i)=>n+i.amount,0),discount=Math.min(original,Math.max(0,Number($('oDiscount')?.value||0))),amount=Math.max(0,original-discount);data.orders.push({id:'O'+Date.now(),date:localDate(),customerId:customer.id,customerName:customer.name,service:orderItems.map(i=>i.service).join(' + '),billing:'单次使用',originalAmount:original,discount,amount,payment:$('oPayment').value,staff:orderItems.map(i=>i.staff).join(' + '),items:orderItems,packageId:null,remark:$('oRemark').value.trim()});await save();closeModal();render();toast(`订单保存成功 · Final ${money(amount)}`);return}if(items.length>1)return toast('购买配套 / 使用配套一次只能选择一个 Service');const item=items[0],s=service(item.service);let amount=0,packageId=null;if(b==='package_buy'){const type=$('pType').value;amount=Number($('pPrice').value||0);if(type==='value'){const buy=Number($('pValue').value||0),bonus=Number($('pBonusValue').value||0),total=Number($('pTotalValue').value||0)||buy+bonus;if(total<=0)return toast('请输入 Total PKG Value');const p={id:'P'+Date.now(),customerId:customer.id,customerName:customer.name,service:'Any Service',times:0,used:0,price:amount,originalTotal:0,packageType:'value',buyValue:buy,bonusValue:bonus,totalValue:total,valueBalance:total,purchasedAt:new Date().toISOString(),source:'purchase'};data.packages.push(p);packageId=p.id}else{const times=Math.max(1,Number($('pTimes').value||1));const p={id:'P'+Date.now(),customerId:customer.id,customerName:customer.name,service:item.service,times,used:0,price:amount,originalTotal:s.price*times,packageType:'times',purchasedAt:new Date().toISOString(),source:'purchase'};data.packages.push(p);packageId=p.id}}else{const valuePkgs=data.packages.filter(p=>p.customerId===customer.id&&p.packageType==='value'&&Number(p.valueBalance||0)>0),timesPkg=data.packages.find(p=>p.customerId===customer.id&&p.packageType!=='value'&&p.service===item.service&&Number(p.times||0)-Number(p.used||0)>0),selected=$('usePackageType')?.value||(timesPkg?'times':'value');if(selected==='times'){if(!timesPkg)return toast('该项目没有可使用的次数配套');timesPkg.used++;packageId=timesPkg.id;data.usage.push({id:'U'+Date.now(),date:localDate(),customerId:customer.id,customerName:customer.name,service:item.service,packageId,used:1,usedValue:0,staff:item.staff})}else{const use=Number($('useValue')?.value||0),total=valuePkgs.reduce((n,p)=>n+Number(p.valueBalance||0),0);if(use<=0||use>total)return toast('请输入有效的 Value 使用金额，并确认余额足够');let rem=use;for(const p of valuePkgs){if(rem<=0)break;const d=Math.min(Number(p.valueBalance||0),rem);p.valueBalance-=d;rem-=d;if(d>0)packageId=packageId||p.id}data.usage.push({id:'U'+Date.now(),date:localDate(),customerId:customer.id,customerName:customer.name,service:item.service,packageId,used:1,usedValue:use,staff:item.staff})}}data.orders.push({id:'O'+Date.now(),date:localDate(),customerId:customer.id,customerName:customer.name,service:item.service,billing:b==='package_buy'?'购买配套':'使用配套',originalAmount:amount,discount:0,amount,payment:$('oPayment').value,staff:item.staff,items:[{service:item.service,staff:item.staff,amount}],packageId,remark:$('oRemark').value.trim()});await save();closeModal();render();toast(b==='package_buy'?'配套购买成功':'配套使用成功')}
