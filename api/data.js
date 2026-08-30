@@ -6,6 +6,7 @@ const initialData = {
   orders: [],
   packages: [],
   usage: [],
+  services: [],
   nextCustomer: 1
 };
 
