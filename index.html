@@ -19,7 +19,101 @@ const ACCOUNTS={belle:{name:'Belle',role:'owner',password:'Belle2026!'},jieyun:{
 const SERVICES=[{name:'深层清洁护理',price:128,duration:120},{name:'Lash Lift',price:158,duration:90},{name:'REJUVENATION 焕肤护理',price:238,duration:90},{name:'美甲',price:88,duration:90},{name:'嫁接睫毛',price:128,duration:120},{name:'野生眉',price:168,duration:90},{name:'纹绣补色',price:199,duration:120}];
 const STAFF=['Belle','Jieyun','Kelly'];let currentUser=null,page='home',syncing=false,orderServiceCount=1,data={customers:[],appointments:[],orders:[],packages:[],usage:[],nextCustomer:1};
 const $=id=>document.getElementById(id);function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}function money(n){return 'RM '+Number(n||0).toFixed(2)}function localDate(){const d=new Date(),o=d.getTimezoneOffset();return new Date(d.getTime()-o*60000).toISOString().slice(0,10)}function minutes(t){const [h,m]=String(t||'').split(':').map(Number);return Number.isFinite(h)&&Number.isFinite(m)?h*60+m:null}function calcEndTime(start,duration){const s=minutes(start);if(s===null)return '';const t=s+Number(duration||0);return `${String(Math.floor(t/60)%24).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`}function service(n){return SERVICES.find(s=>s.name===n)||{name:n,price:0,duration:90}}function toast(m){alert(m)}
-async function loadData(){const r=await fetch(API,{cache:'no-store'});if(!r.ok)throw Error('Database API error '+r.status);data=await r.json();for(const k of ['customers','appointments','orders','packages','usage'])if(!Array.isArray(data[k]))data[k]=[];data.nextCustomer=Number(data.nextCustomer||1);data.customers.forEach(c=>{c.birthday??='';c.remark??=''});data.appointments.forEach(a=>{a.endTime??=calcEndTime(a.time,service(a.service).duration||90);a.remark??=''});data.orders.forEach(o=>{o.discount=Number(o.discount||0);o.originalAmount=o.originalAmount===undefined?Number(o.amount||0)+o.discount:Number(o.originalAmount||0)})}
+async function loadData(){
+  const r=await fetch(API,{cache:'no-store'});
+
+  if(!r.ok){
+    throw Error('Database API error '+r.status);
+  }
+
+  data=await r.json();
+
+  for(const k of [
+    'customers',
+    'appointments',
+    'orders',
+    'packages',
+    'usage'
+  ]){
+    if(!Array.isArray(data[k])){
+      data[k]=[];
+    }
+  }
+
+  data.nextCustomer=Number(data.nextCustomer||1);
+
+  /*
+   * Services 从 Neon 读取
+   * 如果 Neon 还没有 Services，
+   * 就先尝试读取旧 localStorage。
+   */
+
+  let shouldSaveServices=false;
+
+  if(!Array.isArray(data.services)){
+
+    let oldServices=null;
+
+    try{
+      oldServices=JSON.parse(
+        localStorage.getItem('beyoutiful_services')||'null'
+      );
+    }catch(e){
+      oldServices=null;
+    }
+
+    if(
+      Array.isArray(oldServices) &&
+      oldServices.length
+    ){
+      data.services=oldServices;
+    }else{
+      data.services=SERVICES.map(s=>({...s}));
+    }
+
+    shouldSaveServices=true;
+  }
+
+  /*
+   * 以后 SERVICES 以 Neon 为准
+   */
+  SERVICES.splice(
+    0,
+    SERVICES.length,
+    ...data.services.map(s=>({...s}))
+  );
+
+  data.customers.forEach(c=>{
+    c.birthday??='';
+    c.remark??='';
+  });
+
+  data.appointments.forEach(a=>{
+    a.endTime??=
+      calcEndTime(
+        a.time,
+        service(a.service).duration||90
+      );
+
+    a.remark??='';
+  });
+
+  data.orders.forEach(o=>{
+    o.discount=Number(o.discount||0);
+
+    o.originalAmount=
+      o.originalAmount===undefined
+        ? Number(o.amount||0)+Number(o.discount||0)
+        : Number(o.originalAmount||0);
+  });
+
+  /*
+   * 第一次自动把旧 Services 存进 Neon
+   */
+  if(shouldSaveServices){
+    await save();
+  }
+}
 async function save(){if(syncing)return;syncing=true;try{const r=await fetch(API,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(!r.ok)throw Error('Database save failed '+r.status)}finally{syncing=false}}
 function navItems(){const x=[['home','Home'],['customers','Customers'],['appointments','Appointments'],['orders','Orders'],['packages','Package Balance']];if(currentUser?.role==='owner')x.push(['finance','Finance'],['settings','Settings']);return x}function renderNav(){const h=navItems().map(([k,l])=>`<button class="${page===k?'active':''}" onclick="go('${k}')">${l}</button>`).join('');$('nav').innerHTML=h;$('mobileNav').innerHTML=h}function applyPermissions(){if(currentUser)$('welcome').textContent=`${currentUser.name} · ${currentUser.role==='owner'?'Owner':'Staff'}`}function go(p){page=p;$('pageTitle').textContent=navItems().find(x=>x[0]===p)?.[1]||'Home';render()}function render(){if(!currentUser)page='home';if(!navItems().some(x=>x[0]===page))page='home';renderNav();const v=$('view');v.innerHTML=page==='home'?homeView():page==='customers'?customersView():page==='appointments'?appointmentsView():page==='orders'?ordersView():page==='packages'?packagesView():page==='finance'?financeView():settingsView()}
 function doLogin(e){e.preventDefault();const k=$('loginAccount').value,a=ACCOUNTS[k],err=$('loginError');if(!a||$('loginPassword').value!==a.password){err.style.display='block';return}currentUser={key:k,name:a.name,role:a.role};sessionStorage.setItem('beyoutiful_user',JSON.stringify(currentUser));$('loginScreen').style.display='none';err.style.display='none';applyPermissions();render()}function logout(){sessionStorage.removeItem('beyoutiful_user');currentUser=null;$('loginScreen').style.display='flex'}
