@@ -48,41 +48,9 @@ async function loadData(){
    * 就先尝试读取旧 localStorage。
    */
 
-  let shouldSaveServices=false;
-
-  if(!Array.isArray(data.services)){
-
-    let oldServices=null;
-
-    try{
-      oldServices=JSON.parse(
-        localStorage.getItem('beyoutiful_services')||'null'
-      );
-    }catch(e){
-      oldServices=null;
-    }
-
-    if(
-      Array.isArray(oldServices) &&
-      oldServices.length
-    ){
-      data.services=oldServices;
-    }else{
-      data.services=SERVICES.map(s=>({...s}));
-    }
-
-    shouldSaveServices=true;
-  }
-
-  /*
-   * 以后 SERVICES 以 Neon 为准
-   */
-  SERVICES.splice(
-    0,
-    SERVICES.length,
-    ...data.services.map(s=>({...s}))
-  );
-
+ if(!Array.isArray(data.services)){
+  data.services=SERVICES.map(s=>({...s}));
+}
   data.customers.forEach(c=>{
     c.birthday??='';
     c.remark??='';
