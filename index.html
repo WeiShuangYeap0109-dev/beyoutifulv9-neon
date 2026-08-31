@@ -476,7 +476,8 @@ If you need to reschedule, please let us know in advance.
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  modalBody.appendChild(whatsappButton);
+document.querySelector('#editApptForm .summary')
+  ?.insertAdjacentElement('afterend', whatsappButton);
 };
 </script>
 </body></html>
