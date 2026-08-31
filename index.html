@@ -457,5 +457,55 @@ function settingsView(){return `<div class="card"><div class="top" style="paddin
 function openHistoricalPackage(id){const c=data.customers.find(x=>x.id===id);if(!c)return;openModal('Add Historical / Opening Balance',`<form class="form" onsubmit="saveHistoricalPackage(event,'${esc(id)}')"><div class="muted">旧顾客在 App 上线以前已经购买、现在仍有余额的配套，可以直接把「剩余」录入系统。</div><div class="field"><label>配套类型</label><select id="hType" onchange="toggleHistoricalFields()"><option value="times">次数配套</option><option value="value">Value 配套 · Any Service</option></select></div><div id="hServiceField" class="field"><label>适用项目</label><select id="hService">${SERVICES.filter(s=>s.active!==false).map(s=>`<option>${esc(s.name)}</option>`).join('')}</select></div><div id="hTimesFields"><div class="two"><div class="field"><label>原购买次数</label><input id="hTimes" type="number" min="1" value="3"></div><div class="field"><label>现在剩余次数 *</label><input id="hRemaining" type="number" min="0" value="3"></div></div></div><div id="hValueFields" style="display:none"><div class="two"><div class="field"><label>购买 Value</label><input id="hBuyValue" type="number" min="0" step="0.01"></div><div class="field"><label>赠送 Value</label><input id="hBonusValue" type="number" min="0" step="0.01"></div></div><div class="two"><div class="field"><label>Total PKG Value</label><input id="hTotalValue" type="number" min="0" step="0.01"></div><div class="field"><label>现在剩余 Value *</label><input id="hBalanceValue" type="number" min="0" step="0.01"></div></div></div><div class="two"><div class="field"><label>原购买日期</label><input id="hDate" type="date"></div><div class="field"><label>原配套售价</label><input id="hPrice" type="number" min="0" step="0.01"></div></div><div class="field"><label>备注</label><textarea id="hRemark"></textarea></div><button class="btn dark">✓ Save Opening Balance</button></form>`)}function toggleHistoricalFields(){const v=$('hType').value;$('hServiceField').style.display=v==='times'?'block':'none';$('hTimesFields').style.display=v==='times'?'block':'none';$('hValueFields').style.display=v==='value'?'block':'none'}function saveHistoricalPackage(e,id){e.preventDefault();const c=data.customers.find(x=>x.id===id),type=$('hType').value,date=$('hDate').value||localDate(),price=Number($('hPrice').value||0),remark=$('hRemark').value.trim();if(type==='times'){const t=Math.max(1,Number($('hTimes').value||1)),r=Math.max(0,Math.min(t,Number($('hRemaining').value||0)));data.packages.push({id:'P'+Date.now(),customerId:id,customerName:c.name,service:$('hService').value,times:t,used:t-r,price,originalTotal:price,packageType:'times',source:'historical',purchasedAt:date,remark})}else{const buy=Number($('hBuyValue').value||0),bonus=Number($('hBonusValue').value||0),total=Number($('hTotalValue').value||0)||buy+bonus,bal=Math.max(0,Math.min(total,Number($('hBalanceValue').value||0)));if(total<=0)return toast('请输入 Total PKG Value');data.packages.push({id:'P'+Date.now(),customerId:id,customerName:c.name,service:'Any Service',times:0,used:0,price,originalTotal:0,packageType:'value',source:'historical',purchasedAt:date,remark,buyValue:buy,bonusValue:bonus,totalValue:total,valueBalance:bal})}save().then(()=>{closeModal();render();toast('旧配套余额已加入，不计入营业额')})}
 async function resetData(){if(!confirm('确定清除数据库里的全部 V10 数据？'))return;const r=await fetch(API,{method:'DELETE'});if(!r.ok)return alert('清除失败');location.reload()}
 const savedUser=JSON.parse(sessionStorage.getItem('beyoutiful_user')||'null');if(savedUser&&ACCOUNTS[savedUser.key]&&ACCOUNTS[savedUser.key].role===savedUser.role){currentUser=savedUser;$('loginScreen').style.display='none'}(async()=>{try{await loadData();await loadServices();applyPermissions();render()}catch(e){console.error(e);$('loginError').style.display='block';$('loginError').textContent='数据库 API 暂时无法连接，请检查部署和 DATABASE_URL。';applyPermissions()}})();
+const stableOpenAppointmentEdit = openAppointmentEdit;
+
+openAppointmentEdit = function(id){
+  stableOpenAppointmentEdit(id);
+
+  const appointment = data.appointments.find(a => a.id === id);
+  const customer = data.customers.find(c => c.id === appointment?.customerId);
+  const summary = document.querySelector('#editApptForm .summary');
+
+  if(!appointment || !summary || document.getElementById('whatsappAppointmentButton')) return;
+
+  const button = document.createElement('button');
+  button.id = 'whatsappAppointmentButton';
+  button.type = 'button';
+  button.className = 'btn dark';
+  button.style.width = '100%';
+  button.style.margin = '12px 0';
+  button.textContent = '💬 WhatsApp Customer';
+
+  button.onclick = function(){
+    const rawPhone = String(customer?.phone || '').replace(/\D/g, '');
+    const phone = rawPhone.startsWith('0')
+      ? `60${rawPhone.slice(1)}`
+      : rawPhone.startsWith('60') ? rawPhone : `60${rawPhone}`;
+
+    if(rawPhone.length < 10){
+      return toast('This customer does not have a valid WhatsApp number');
+    }
+
+    const dateText = appointment.date.split('-').reverse().join('/');
+
+    const message =
+`Hi ${customer?.name || 'there'} 🤍
+
+Your appointment has been confirmed.
+您的预约已确认。
+
+📅 ${dateText}
+🕑 ${appointment.time}
+✨ ${appointment.service}
+👩🏻‍💼 ${appointment.staff}
+
+If you need to reschedule, please let us know in advance.
+如需更改预约，请提前联系我们。`;
+
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  summary.insertAdjacentElement('afterend', button);
+};
 </script>
 </body></html>
