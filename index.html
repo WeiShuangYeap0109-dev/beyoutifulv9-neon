@@ -489,23 +489,50 @@ openAppointmentEdit = function(id){
     const dateText = appointment.date.split('-').reverse().join('/');
 
     const message =
-Beyoutiful Studio & Academy 预约提醒
-      
-`Hi ${customer?.name || 'there'} 
-您在 Beyoutiful Studio & Academy 的预约即将来临！
+const stableOpenAppointmentEdit = openAppointmentEdit;
 
+openAppointmentEdit = function(id){
+  stableOpenAppointmentEdit(id);
 
-日期 ${dateText}
-時間 ${appointment.time}
-項目 ${appointment.service}
-指定 ${appointment.staff}
-预约时间保留15分钟
+  const appointment = data.appointments.find(a => a.id === id);
+  const customer = data.customers.find(c => c.id === appointment?.customerId);
+  const summary = document.querySelector('#editApptForm .summary');
 
-⚠️改预约请提前1天告知
-📍地点 ：https://maps.app.goo.gl/ToxN8sve7spXS4Mh6?g_st=ic
+  if(!appointment || !summary || document.getElementById('whatsappAppointmentButton')) return;
 
+  const button = document.createElement('button');
+  button.id = 'whatsappAppointmentButton';
+  button.type = 'button';
+  button.className = 'btn dark';
+  button.style.width = '100%';
+  button.style.margin = '12px 0';
+  button.textContent = '💬 WhatsApp Customer';
 
-祝您有个愉快的体验！`;
+  button.onclick = function(){
+    const rawPhone = String(customer?.phone || '').replace(/\D/g, '');
+    const phone = rawPhone.startsWith('0')
+      ? `60${rawPhone.slice(1)}`
+      : rawPhone.startsWith('60') ? rawPhone : `60${rawPhone}`;
+
+    if(rawPhone.length < 10){
+      return toast('This customer does not have a valid WhatsApp number');
+    }
+
+    const dateText = appointment.date.split('-').reverse().join('/');
+
+    const message =
+`Hi ${customer?.name || 'there'} 🤍
+
+Your appointment has been confirmed.
+您的预约已确认。
+
+📅 ${dateText}
+🕑 ${appointment.time}
+✨ ${appointment.service}
+👩🏻‍💼 ${appointment.staff}
+
+If you need to reschedule, please let us know in advance.
+如需更改预约，请提前联系我们。`;
 
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
   };
