@@ -74,13 +74,6 @@ async function loadData(){
         ? Number(o.amount||0)+Number(o.discount||0)
         : Number(o.originalAmount||0);
   });
-
-  /*
-   * 第一次自动把旧 Services 存进 Neon
-   */
-  if(shouldSaveServices){
-    await save();
-  }
 }
 async function save(){if(syncing)return;syncing=true;try{const r=await fetch(API,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(!r.ok)throw Error('Database save failed '+r.status)}finally{syncing=false}}
 function navItems(){const x=[['home','Home'],['customers','Customers'],['appointments','Appointments'],['orders','Orders'],['packages','Package Balance']];if(currentUser?.role==='owner')x.push(['finance','Finance'],['settings','Settings']);return x}function renderNav(){const h=navItems().map(([k,l])=>`<button class="${page===k?'active':''}" onclick="go('${k}')">${l}</button>`).join('');$('nav').innerHTML=h;$('mobileNav').innerHTML=h}function applyPermissions(){if(currentUser)$('welcome').textContent=`${currentUser.name} · ${currentUser.role==='owner'?'Owner':'Staff'}`}function go(p){page=p;$('pageTitle').textContent=navItems().find(x=>x[0]===p)?.[1]||'Home';render()}function render(){if(!currentUser)page='home';if(!navItems().some(x=>x[0]===page))page='home';renderNav();const v=$('view');v.innerHTML=page==='home'?homeView():page==='customers'?customersView():page==='appointments'?appointmentsView():page==='orders'?ordersView():page==='packages'?packagesView():page==='finance'?financeView():settingsView()}
