@@ -455,17 +455,23 @@ openAppointmentEdit = function(id){
     const message =
 `Hi ${customer?.name || 'there'} 🤍
 
-Your appointment has been confirmed.
-您的预约已确认。
+Beyoutiful Studio & Academy
+预约提醒
 
-📅 ${dateText}
-🕑 ${timeText}
-✨ ${appointment.service}
-👩🏻‍💼 ${appointment.staff}
+您在 Beyoutiful Studio & Academy 的预约即将来临！
 
-If you need to reschedule, please let us know in advance.
-如需更改预约，请提前联系我们。`;
+日期 ${dateText}
+时间 ${timeText}
+服务项目 ${appointment.service}
+服务美容师 ${appointment.staff}
 
+⚠️预约时间保留15分钟
+⚠️改预约请提前1天告知
+
+📍 Google Maps
+https://maps.app.goo.gl/ToxN8sve7spXS4Mh6?g_st=ic
+
+祝您有个愉快的体验！💕`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
