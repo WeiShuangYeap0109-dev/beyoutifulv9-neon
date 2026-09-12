@@ -26,7 +26,55 @@ async function loadData(){const r=await fetch(API,{cache:'no-store'});if(!r.ok)t
 async function save(){if(syncing)return;syncing=true;try{const r=await fetch(API,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(!r.ok)throw Error('Database save failed '+r.status)}finally{syncing=false}}
 async function saveSnapshot(next){if(syncing)throw Error('系统正在保存，请稍后再试');syncing=true;try{const r=await fetch(API,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)});if(!r.ok)throw Error('Database save failed '+r.status)}finally{syncing=false}}
 function navItems(){const x=[['home','Home'],['customers','Customers'],['appointments','Appointments'],['orders','Orders'],['packages','Package Balance'],['performance','My Performance']];if(currentUser?.role==='owner')x.push(['finance','Sales'],['settings','Settings']);return x}function renderNav(){const h=navItems().map(([k,l])=>`<button class="${page===k?'active':''}" onclick="go('${k}')">${l}</button>`).join('');$('nav').innerHTML=h;$('mobileNav').innerHTML=h}function applyPermissions(){if(currentUser)$('welcome').textContent=`${currentUser.name} · ${currentUser.role==='owner'?'Owner':'Staff'}`}function go(p){page=p;$('pageTitle').textContent=navItems().find(x=>x[0]===p)?.[1]||'Home';render()}function render(){if(!currentUser)page='home';if(!navItems().some(x=>x[0]===page))page='home';renderNav();const v=$('view');v.innerHTML=page==='home'?homeView():page==='customers'?customersView():page==='appointments'?appointmentsView():page==='orders'?ordersView():page==='packages'?packagesView():page==='performance'?performanceView():page==='finance'?financeView():settingsView()}
-function doLogin(e){e.preventDefault();const k=$('loginAccount').value,a=ACCOUNTS[k],err=$('loginError');if(!a||$('loginPassword').value!==a.password){err.style.display='block';return}currentUser={key:k,name:a.name,role:a.role};sessionStorage.setItem('beyoutiful_user',JSON.stringify(currentUser));$('loginScreen').style.display='none';err.style.display='none';applyPermissions();render()}function logout(){sessionStorage.removeItem('beyoutiful_user');currentUser=null;$('loginScreen').style.display='flex'}function monthKey(date){return String(date||'').slice(0,7)}function currentMonthKey(){return localDate().slice(0,7)}function monthLabel(key){const [y,m]=String(key||currentMonthKey()).split('-').map(Number);if(!y||!m)return key;return new Date(y,m-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'})}function monthOptions(){const keys=new Set(data.orders.map(o=>monthKey(o.date)).filter(Boolean));keys.add(currentMonthKey());return Array.from(keys).sort().reverse()}function ordersForMonth(key){return data.orders.filter(o=>monthKey(o.date)===key)}function homeView(){const month=currentMonthKey(),monthOrders=ordersForMonth(month),rev=monthOrders.reduce((a,o)=>a+Number(o.amount||0),0),today=localDate(),ap=data.appointments.filter(a=>a.date===today).sort((a,b)=>(a.time||'').localeCompare(b.time||''));const revenueCard=currentUser?.role==='owner'?`<div class="card"><div class="muted">Revenue</div><div class="stat">${money(rev)}</div></div>`:'';return `<div class="section-head"><div><h3 style="margin:0">This Month</h3><div class="muted">${esc(monthLabel(month))}</div></div></div><div class="grid stats">${revenueCard}<div class="card"><div class="muted">Completed Orders</div><div class="stat">${monthOrders.length}</div></div><div class="card"><div class="muted">Customers</div><div class="stat">${data.customers.length}</div></div><div class="card"><div class="muted">Appointments This Month</div><div class="stat">${data.appointments.filter(a=>monthKey(a.date)===month).length}</div></div></div><div class="card section"><b>Today</b>${ap.length?ap.map(a=>`<div class="row"><div><b>${esc(a.time)}–${esc(a.endTime||'')} · ${esc(apptCustomer(a))}</b><div class="muted">${esc(a.service)} · ${esc(a.staff)}</div></div><span class="pill ${a.status==='Completed'?'ok':''}">${apptStatusLabel(a.status)}</span></div>`).join(''):'<div class="empty">No appointments today.</div>'}</div>`}
+const VAPID_PUBLIC_KEY='BJwSQjfZEh9-PRx2xtKiybS4X3uSLoz-WYmT5hYgcoSwPoylUY8JneAYrCF8fsDYWRaOpF_CAQIjRPBj0_AiYEo';
+
+function urlBase64ToUint8Array(base64String){
+  const padding='='.repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding)
+    .replace(/-/g,'+')
+    .replace(/_/g,'/');
+  const rawData=window.atob(base64);
+  return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));
+}
+
+async function registerPush(username){
+  try{
+    if(!('serviceWorker' in navigator)) return;
+    if(!('PushManager' in window)) return;
+
+    const permission=await Notification.requestPermission();
+    if(permission!=='granted') return;
+
+    const reg=await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+
+    let subscription=await reg.pushManager.getSubscription();
+
+    if(!subscription){
+      subscription=await reg.pushManager.subscribe({
+        userVisibleOnly:true,
+        applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+
+    await fetch('/api/push-subscribe',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        username:String(username).toLowerCase(),
+        subscription
+      })
+    });
+
+    console.log('Push registered');
+  }catch(err){
+    console.log('Push error',err);
+  }
+}
+
+
+function doLogin(e){e.preventDefault();const k=$('loginAccount').value,a=ACCOUNTS[k],err=$('loginError');if(!a||$('loginPassword').value!==a.password){err.style.display='block';return}currentUser={key:k,name:a.name,role:a.role};sessionStorage.setItem('beyoutiful_user',JSON.stringify(currentUser));$('loginScreen').style.display='none';err.style.display='none';applyPermissions();render();if(k==='jieyun'||k==='kelly')registerPush(k).catch(console.error)}
+function logout(){sessionStorage.removeItem('beyoutiful_user');currentUser=null;$('loginScreen').style.display='flex'}function monthKey(date){return String(date||'').slice(0,7)}function currentMonthKey(){return localDate().slice(0,7)}function monthLabel(key){const [y,m]=String(key||currentMonthKey()).split('-').map(Number);if(!y||!m)return key;return new Date(y,m-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'})}function monthOptions(){const keys=new Set(data.orders.map(o=>monthKey(o.date)).filter(Boolean));keys.add(currentMonthKey());return Array.from(keys).sort().reverse()}function ordersForMonth(key){return data.orders.filter(o=>monthKey(o.date)===key)}function homeView(){const month=currentMonthKey(),monthOrders=ordersForMonth(month),rev=monthOrders.reduce((a,o)=>a+Number(o.amount||0),0),today=localDate(),ap=data.appointments.filter(a=>a.date===today).sort((a,b)=>(a.time||'').localeCompare(b.time||''));const revenueCard=currentUser?.role==='owner'?`<div class="card"><div class="muted">Revenue</div><div class="stat">${money(rev)}</div></div>`:'';return `<div class="section-head"><div><h3 style="margin:0">This Month</h3><div class="muted">${esc(monthLabel(month))}</div></div></div><div class="grid stats">${revenueCard}<div class="card"><div class="muted">Completed Orders</div><div class="stat">${monthOrders.length}</div></div><div class="card"><div class="muted">Customers</div><div class="stat">${data.customers.length}</div></div><div class="card"><div class="muted">Appointments This Month</div><div class="stat">${data.appointments.filter(a=>monthKey(a.date)===month).length}</div></div></div><div class="card section"><b>Today</b>${ap.length?ap.map(a=>`<div class="row"><div><b>${esc(a.time)}–${esc(a.endTime||'')} · ${esc(apptCustomer(a))}</b><div class="muted">${esc(a.service)} · ${esc(a.staff)}</div></div><span class="pill ${a.status==='Completed'?'ok':''}">${apptStatusLabel(a.status)}</span></div>`).join(''):'<div class="empty">No appointments today.</div>'}</div>`}
 function openModal(t,b){$('modalTitle').textContent=t;$('modalBody').innerHTML=b;$('modal').classList.add('open')}function closeModal(){$('modal').classList.remove('open')}
 /* CUSTOMERS */
 function customersView(){const q=String(window.customerQuery||'').trim().toLowerCase();const list=data.customers.filter(c=>!q||String(c.name||'').toLowerCase().includes(q)||String(c.phone||'').toLowerCase().includes(q)||String(c.id||'').toLowerCase().includes(q));return `<div class="toolbar"><button class="btn dark" onclick="openCustomer()">＋ New Customer</button><input class="btn" style="min-width:240px" placeholder="🔍 Search name / phone / ID" value="${esc(window.customerQuery||'')}" oninput="window.customerQuery=this.value;render()"><button class="btn" onclick="window.customerQuery='';render()">Clear</button></div><div class="card"><div class="scroll"><table class="table"><thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Birthday</th><th>Remark</th><th>旧配套</th></tr></thead><tbody>${list.map(c=>`<tr onclick="openCustomerDetail('${esc(c.id)}')" style="cursor:pointer"><td>${esc(c.id)}</td><td><b>${esc(c.name)}</b></td><td>${esc(c.phone||'—')}</td><td>${esc(c.birthday||'—')}</td><td>${esc(c.remark||'—')}</td><td><button class="btn" onclick="event.stopPropagation();openHistoricalPackage('${esc(c.id)}')">＋ 添加</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty">No matching customers</td></tr>'}</tbody></table></div></div>`}
