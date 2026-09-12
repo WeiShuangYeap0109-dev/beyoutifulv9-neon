@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "dependencies": {
-    "@neondatabase/serverless": "latest"
-  }
+  "dependencies": {
+  "@neondatabase/serverless": "latest",
+  "web-push": "^3.6.7"
 }
