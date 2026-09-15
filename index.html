@@ -18,6 +18,16 @@ const API='/api/data';
 const ACCOUNTS={belle:{name:'Belle',role:'owner',password:'Belle2026!'},jieyun:{name:'Jie Yun',role:'staff',password:'Jieyun2026!'},kelly:{name:'Kelly',role:'staff',password:'Kelly2026!'},test:{name:'Test Staff',role:'staff',password:'Test2026!'}};
 const SERVICES=[{name:'深层清洁护理',price:128,duration:120,active:true},{name:'Lash Lift',price:158,duration:90,active:true},{name:'REJUVENATION 焕肤护理',price:238,duration:90,active:true},{name:'美甲',price:88,duration:90,active:true},{name:'嫁接睫毛',price:128,duration:120,active:true},{name:'野生眉',price:168,duration:90,active:true},{name:'纹绣补色',price:199,duration:120,active:true},{name:'Lash Touch Up',price:58,duration:30,active:true}];
 const STAFF=['Belle','Jieyun','Kelly','Test Staff'];let currentUser=null,page='home',syncing=false,orderServiceCount=1,data={customers:[],appointments:[],orders:[],packages:[],usage:[],services:[],packageTransactions:[],commissions:[],nextCustomer:1};
+const APPOINTMENT_STAFF=['Belle','Jieyun','Kelly'];
+let appointmentStaffFilter='ALL';
+
+function normalizeAppointmentStaff(v=''){
+  const k=String(v).trim().toLowerCase().replace(/\s+/g,'');
+  if(k==='belle') return 'Belle';
+  if(k==='jieyun') return 'Jieyun';
+  if(k==='kelly') return 'Kelly';
+  return String(v||'').trim();
+}
 const $=id=>document.getElementById(id);function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}function money(n){return 'RM '+Number(n||0).toFixed(2)}function localDate(){const d=new Date(),o=d.getTimezoneOffset();return new Date(d.getTime()-o*60000).toISOString().slice(0,10)}function minutes(t){const [h,m]=String(t||'').split(':').map(Number);return Number.isFinite(h)&&Number.isFinite(m)?h*60+m:null}function calcEndTime(start,duration){const s=minutes(start);if(s===null)return '';const t=s+Number(duration||0);return `${String(Math.floor(t/60)%24).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`}function service(n){return SERVICES.find(s=>s.name===n)||{name:n,price:0,duration:90}}function toast(m){alert(m)}
 function normalizeServices(list){return (Array.isArray(list)?list:[]).filter(s=>s&&String(s.name||'').trim()).map(s=>({name:String(s.name).trim(),price:Number(s.price||0),duration:Math.max(1,Number(s.duration||90)),active:s.active!==false}))}
 function applyServices(list){SERVICES.splice(0,SERVICES.length,...normalizeServices(list))}
@@ -96,12 +106,151 @@ function apptStatusLabel(s){return ({Booked:'已预约',Confirmed:'已确认',Co
 function appointmentConflict(date,start,end,staff,exclude=''){const s=minutes(start),e=minutes(end);if(s===null||e===null||e<=s)return null;return data.appointments.find(a=>a.id!==exclude&&a.date===date&&a.staff===staff&&a.status!=='Cancelled'&&s<minutes(a.endTime||calcEndTime(a.time,service(a.service).duration||90))&&e>minutes(a.time))}function conflictMessage(a){return `⚠️ 预约冲突\n\n${a.staff} 在 ${a.date} ${a.time}–${a.endTime||''} 已有预约：\n\n${apptCustomer(a)} · ${a.service}\n\n请换时间或换员工。`}
 function apptChip(a){return `<button class="appt-chip ${a.status==='Cancelled'?'cancelled':''}" onclick="openAppointmentEdit('${esc(a.id)}')"><b>${esc(a.time)}–${esc(a.endTime||'')}</b> ${esc(apptCustomer(a))}<small>${esc(apptPhone(a))} · ${esc(a.service)} · ${a.status==='Cancelled'?'已取消':esc(a.staff)}</small></button>`}
 function appointmentMonthView(y,m){const first=new Date(Date.UTC(y,m,1)),last=new Date(Date.UTC(y,m+1,0)),start=first.getUTCDay(),cells=[];for(let i=0;i<start;i++)cells.push('<div class="cal-cell muted-cell"></div>');for(let d=1;d<=last.getUTCDate();d++){const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,list=data.appointments.filter(a=>a.date===ds).sort((a,b)=>(a.time||'').localeCompare(b.time||''));cells.push(`<div class="cal-cell ${ds===localDate()?'today':''}"><div class="cal-date">${d}</div>${list.slice(0,4).map(apptChip).join('')}${list.length>4?`<div class="more">+${list.length-4} more</div>`:''}</div>`)}return `<div class="calendar">${cells.join('')}</div>`}
-function appointmentDayView(date){const times=[];for(let h=9;h<=21;h++)times.push(`${String(h).padStart(2,'0')}:00`);return `<div class="schedule-scroll"><div class="schedule-grid"><div class="time-head"></div>${STAFF.map(s=>`<div class="staff-head">${s}</div>`).join('')}${times.map(t=>`<div class="time-row"><div class="time-label">${t}</div>${STAFF.map(st=>{const ap=data.appointments.filter(a=>a.date===date&&a.staff===st&&a.status!=='Cancelled'&&minutes(a.time)>=minutes(t)&&minutes(a.time)<minutes(t)+60);return `<div class="slot">${ap.map(apptChip).join('')}${!ap.length?'<span class="slot-empty">—</span>':''}</div>`}).join('')}</div>`).join('')}</div></div>`}
-function appointmentsView(){const d=localDate(),p=d.split('-').map(Number),y=Number(window.apptYear||p[0]),m=Number.isInteger(window.apptMonth)?window.apptMonth:p[1]-1,selected=window.apptDate||d;return `<div class="toolbar"><button class="btn dark" onclick="openAppointment()">＋ New Appointment</button><span class="muted" style="align-self:center">📅 可将预约加入 Google Calendar</span><div class="view-switch"><button class="btn ${window.apptView!=='day'?'dark':''}" onclick="setApptView('month')">Month</button><button class="btn ${window.apptView==='day'?'dark':''}" onclick="setApptView('day')">Day</button></div>${window.apptView==='day'?`<input class="btn" type="date" value="${selected}" onchange="selectApptDate(this.value)">`:''}</div><div class="card">${window.apptView==='day'?`<div class="section-head"><div><b>${selected}</b><div class="muted">Start Time – End Time · 点击预约可修改</div></div></div>${appointmentDayView(selected)}`:`<div class="calendar-head"><button class="btn" onclick="changeApptMonth(-1)">‹</button><b>${y}年 ${m+1}月</b><button class="btn" onclick="changeApptMonth(1)">›</button></div><div class="weekdays">${['日','一','二','三','四','五','六'].map(x=>`<b>${x}</b>`).join('')}</div>${appointmentMonthView(y,m)}`}</div><div class="card section"><div class="section-head"><b>预约状态</b><span class="muted">点击任何预约可修改</span></div><div class="status-legend"><span>● 已预约</span><span>● 已确认</span><span>● 已完成</span><span>● 已改期</span><span>● 已取消</span></div></div>`}
-function setApptView(v){window.apptView=v;render()}function changeApptMonth(n){const d=new Date(Date.UTC(Number(window.apptYear||new Date().getFullYear()),Number.isInteger(window.apptMonth)?window.apptMonth:new Date().getMonth(),1));d.setUTCMonth(d.getUTCMonth()+n);window.apptYear=d.getUTCFullYear();window.apptMonth=d.getUTCMonth();render()}function selectApptDate(v){window.apptDate=v;const [y,m]=v.split('-').map(Number);window.apptYear=+y;window.apptMonth=+m-1;render()}
+function setAppointmentStaffFilter(staff){
+  appointmentStaffFilter=staff;
+  render();
+}
+
+function appointmentDayView(date){
+  const filter=appointmentStaffFilter||'ALL';
+
+  let list=data.appointments
+    .filter(a=>a.date===date)
+    .filter(a=>filter==='ALL'||normalizeAppointmentStaff(a.staff)===filter)
+    .sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+
+  const tabs=['ALL',...APPOINTMENT_STAFF].map(staff=>`
+    <button
+      class="btn ${filter===staff?'dark':''}"
+      onclick="setAppointmentStaffFilter('${staff}')">
+      ${staff.toUpperCase()}
+    </button>
+  `).join('');
+
+  const cards=list.length?list.map(a=>`
+    <div class="card"
+      style="padding:14px;margin-bottom:10px;cursor:pointer"
+      onclick="openAppointmentEdit('${esc(a.id)}')">
+
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div>
+          <div style="font-size:17px;font-weight:750">
+            ${esc(a.time)}–${esc(a.endTime||'')}
+          </div>
+
+          <div style="font-size:16px;font-weight:700;margin-top:5px">
+            ${esc(apptCustomer(a))}
+          </div>
+
+          <div class="muted" style="margin-top:4px">
+            ${esc(apptPhone(a)||'No phone')}
+          </div>
+        </div>
+
+        <span class="pill ${a.status==='Completed'?'ok':''}">
+          ${apptStatusLabel(a.status)}
+        </span>
+      </div>
+
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
+        <b>${esc(a.service)}</b>
+        <div class="muted" style="margin-top:4px">
+          Staff · ${esc(normalizeAppointmentStaff(a.staff))}
+        </div>
+        ${a.remark?`<div class="muted" style="margin-top:4px">📝 ${esc(a.remark)}</div>`:''}
+      </div>
+    </div>
+  `).join(''):'<div class="empty">这一天没有预约。</div>';
+
+  return `
+    <div class="toolbar" style="margin-bottom:16px">
+      ${tabs}
+    </div>
+    <div>
+      ${cards}
+    </div>
+  `;
+}
+function appointmentsView(){
+  const d=localDate();
+  const p=d.split('-').map(Number);
+  const y=Number(window.apptYear||p[0]);
+  const m=Number.isInteger(window.apptMonth)?window.apptMonth:p[1]-1;
+  const selected=window.apptDate||d;
+
+  return `
+    <div class="toolbar">
+      <button class="btn dark" onclick="openAppointment()">＋ New Appointment</button>
+
+      <div class="view-switch">
+        <button class="btn ${window.apptView!=='day'?'dark':''}"
+          onclick="setApptView('month')">Month</button>
+
+        <button class="btn ${window.apptView==='day'?'dark':''}"
+          onclick="setApptView('day')">List</button>
+      </div>
+
+      ${window.apptView==='day'?`
+        <input class="btn" type="date"
+          value="${selected}"
+          onchange="selectApptDate(this.value)">
+      `:''}
+    </div>
+
+    <div class="card">
+      ${window.apptView==='day'?`
+        <div class="section-head">
+          <div>
+            <b>${selected}</b>
+            <div class="muted">点击预约可查看或修改</div>
+          </div>
+        </div>
+
+        ${appointmentDayView(selected)}
+      `:`
+        <div class="calendar-head">
+          <button class="btn" onclick="changeApptMonth(-1)">‹</button>
+          <b>${y}年 ${m+1}月</b>
+          <button class="btn" onclick="changeApptMonth(1)">›</button>
+        </div>
+
+        <div class="weekdays">
+          ${['日','一','二','三','四','五','六']
+            .map(x=>`<b>${x}</b>`).join('')}
+        </div>
+
+        ${appointmentMonthView(y,m)}
+      `}
+    </div>
+  `;
+}
+function setApptView(v){
+  window.apptView=v;
+  render();
+}
+
+function changeApptMonth(n){
+  const d=new Date(Date.UTC(
+    Number(window.apptYear||new Date().getFullYear()),
+    Number.isInteger(window.apptMonth)?window.apptMonth:new Date().getMonth(),
+    1
+  ));
+  d.setUTCMonth(d.getUTCMonth()+n);
+  window.apptYear=d.getUTCFullYear();
+  window.apptMonth=d.getUTCMonth();
+  render();
+}
+
+function selectApptDate(v){
+  window.apptDate=v;
+  const [y,m]=v.split('-').map(Number);
+  window.apptYear=+y;
+  window.apptMonth=+m-1;
+  render();
+}  
 function customerSearchHTML(prefix,id=''){const c=data.customers.find(x=>x.id===id);return `<div class="field customer-search"><label>Customer（可搜姓名或电话号码）</label><input id="${prefix}CustomerSearch" autocomplete="off" placeholder="输入姓名 / 电话号码" value="${c?esc(c.name):''}" oninput="searchCustomer('${prefix}',this.value)" onfocus="searchCustomer('${prefix}',this.value)"><input type="hidden" id="${prefix}Customer" value="${esc(id)}"><div id="${prefix}CustomerResults" class="customer-results" style="display:none"></div><div id="${prefix}SelectedCustomer" class="selected-customer" style="${c?'':'display:none'}">${c?`<b>${esc(c.name)}</b><div class="muted">📞 ${esc(c.phone||'未填写电话')} · ID ${esc(c.id)}</div>`:''}</div></div>`}
 function searchCustomer(prefix,q){const box=$(prefix+'CustomerResults');if(!box)return;const term=String(q||'').trim().toLowerCase();const list=data.customers.filter(c=>!term||String(c.name||'').toLowerCase().includes(term)||String(c.phone||'').toLowerCase().includes(term));box.innerHTML=list.slice(0,30).map(c=>`<button type="button" class="customer-result" onclick="selectCustomer('${prefix}','${esc(c.id)}')"><b>${esc(c.name)}</b><div class="muted">📞 ${esc(c.phone||'未填写电话')} · ID ${esc(c.id)}</div></button>`).join('')||'<div class="empty">找不到顾客</div>';box.style.display='block'}function selectCustomer(prefix,id){const c=data.customers.find(x=>x.id===id);if(!c)return;$(prefix+'Customer').value=id;$(prefix+'CustomerSearch').value=c.name;$(prefix+'SelectedCustomer').style.display='block';$(prefix+'SelectedCustomer').innerHTML=`<b>${esc(c.name)}</b><div class="muted">📞 ${esc(c.phone||'未填写电话')} · ID ${esc(c.id)}</div>`;$(prefix+'CustomerResults').style.display='none';if(prefix==='a')refreshAppointmentEnd();if(prefix==='o')refreshOrder()}document.addEventListener('click',e=>{if(!e.target.closest('.customer-search'))document.querySelectorAll('.customer-results').forEach(x=>x.style.display='none')});
-function openAppointment(){openModal('New Appointment',`<form class="form" onsubmit="addAppointment(event)"><div class="two"><div class="field"><label>Date</label><input id="aDate" type="date" required value="${localDate()}"></div><div class="field"><label>Start Time</label><input id="aTime" type="time" required oninput="refreshAppointmentEnd()"></div></div><div class="field"><label>顾客</label><select id="aCustomerMode" onchange="toggleAppointmentCustomerMode()"><option value="existing">已有顾客</option><option value="new">新顾客 · 尚未建档</option></select></div><div id="aExistingCustomer">${customerSearchHTML('a')}</div><div id="aNewCustomer" style="display:none"><div class="two"><div class="field"><label>姓名 *</label><input id="aGuestName"></div><div class="field"><label>电话</label><input id="aGuestPhone"></div></div><div class="muted">预约会先保存为临时顾客，到店后可再建立正式 Customer。</div></div><div class="two"><div class="field"><label>Service</label><select id="aService" onchange="refreshAppointmentEnd()">${SERVICES.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Staff</label><select id="aStaff">${(currentUser?.role==='staff'?[currentUser.name]:STAFF).map(s=>`<option>${esc(s)}</option>`).join('')}</select></div></div><div class="two"><div class="field"><label>End Time（自动计算，可修改）</label><input id="aEndTime" type="time" required></div><div class="field"><label>Service Duration</label><input id="aDuration" disabled></div></div><div class="field"><label>预约备注</label><textarea id="aRemark"></textarea></div><button class="btn dark">Save Appointment</button></form>`);refreshAppointmentEnd()}
+function openAppointment(){openModal('New Appointment',`<form class="form" onsubmit="addAppointment(event)"><div class="two"><div class="field"><label>Date</label><input id="aDate" type="date" required value="${localDate()}"></div><div class="field"><label>Start Time</label><input id="aTime" type="time" required oninput="refreshAppointmentEnd()"></div></div><div class="field"><label>顾客</label><select id="aCustomerMode" onchange="toggleAppointmentCustomerMode()"><option value="existing">已有顾客</option><option value="new">新顾客 · 尚未建档</option></select></div><div id="aExistingCustomer">${customerSearchHTML('a')}</div><div id="aNewCustomer" style="display:none"><div class="two"><div class="field"><label>姓名 *</label><input id="aGuestName"></div><div class="field"><label>电话</label><input id="aGuestPhone"></div></div><div class="muted">预约会先保存为临时顾客，到店后可再建立正式 Customer。</div></div><div class="two"><div class="field"><label>Service</label><select id="aService" onchange="refreshAppointmentEnd()">${SERVICES.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Staff</label><select id="aStaff">${APPOINTMENT_STAFF.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div></div><div class="two"><div class="field"><label>End Time（自动计算，可修改）</label><input id="aEndTime" type="time" required></div><div class="field"><label>Service Duration</label><input id="aDuration" disabled></div></div><div class="field"><label>预约备注</label><textarea id="aRemark"></textarea></div><button class="btn dark">Save Appointment</button></form>`);refreshAppointmentEnd()}
 function refreshAppointmentEnd(){const s=$('aTime'),e=$('aEndTime'),sv=$('aService'),du=$('aDuration');if(!s||!e||!sv)return;const d=service(sv.value).duration||90;if(s.value)e.value=calcEndTime(s.value,d);if(du)du.value=d+' min'}
 function formatTime12(t){const [h,m]=String(t||'').split(':').map(Number);if(!Number.isFinite(h)||!Number.isFinite(m))return t||'';const ap=h>=12?'PM':'AM',hh=h%12||12;return `${hh}:${String(m).padStart(2,'0')} ${ap}`}
 function whatsappPhone(phone){let p=String(phone||'').replace(/\D/g,'');if(!p)return '';if(p.startsWith('0'))p='60'+p.slice(1);if(!p.startsWith('60'))p='60'+p;return p}
@@ -124,7 +273,7 @@ function openGoogleCalendar(id){
   if(!a)return toast('找不到预约');
   window.open(googleCalendarUrl(a),'_blank');
 }
-function openAppointmentEdit(id){const a=data.appointments.find(x=>x.id===id);if(!a)return;const end=a.endTime||calcEndTime(a.time,service(a.service).duration||90),c=data.customers.find(x=>x.id===a.customerId);openModal('预约详情',`<form class="form" id="editApptForm" onsubmit="saveAppointmentEdit(event,'${esc(id)}')"><div class="summary"><div><span>顾客</span><b>${esc(c?.name||'—')}</b></div><div><span>电话</span><b>${esc(c?.phone||'—')}</b></div><div><span>项目</span><b>${esc(a.service)}</b></div></div><div class="two"><div class="field"><label>日期</label><input id="eDate" type="date" required value="${esc(a.date)}"></div><div class="field"><label>Start Time</label><input id="eTime" type="time" required value="${esc(a.time)}"></div></div><div class="two"><div class="field"><label>End Time</label><input id="eEndTime" type="time" required value="${esc(end)}"></div><div class="field"><label>员工</label><select id="eStaff">${(currentUser?.role==='staff'?[currentUser.name]:STAFF).map(s=>`<option ${s===a.staff?'selected':''}>${esc(s)}</option>`).join('')}</select></div></div><div class="field"><label>状态</label><select id="eStatus">${['Booked','Confirmed','Completed','Rescheduled','Cancelled'].map(s=>`<option value="${s}" ${s===a.status?'selected':''}>${apptStatusLabel(s)}</option>`).join('')}</select></div><div class="field"><label>预约备注</label><textarea id="eRemark">${esc(a.remark||'')}</textarea></div><button class="btn dark">保存修改</button><button type="button" class="btn" onclick="openGoogleCalendar('${esc(id)}')">📅 加到 Google Calendar</button>${currentUser?.key==='belle'?`<button type="button" class="btn" onclick="sendWhatsAppReminder('${esc(id)}')">📲 WhatsApp 预约提醒</button>`:''}<button type="button" class="btn danger" onclick="cancelAppointment('${esc(id)}')">直接取消预约</button></form>`)}
+function openAppointmentEdit(id){const a=data.appointments.find(x=>x.id===id);if(!a)return;const end=a.endTime||calcEndTime(a.time,service(a.service).duration||90),c=data.customers.find(x=>x.id===a.customerId);openModal('预约详情',`<form class="form" id="editApptForm" onsubmit="saveAppointmentEdit(event,'${esc(id)}')"><div class="summary"><div><span>顾客</span><b>${esc(c?.name||'—')}</b></div><div><span>电话</span><b>${esc(c?.phone||'—')}</b></div><div><span>项目</span><b>${esc(a.service)}</b></div></div><div class="two"><div class="field"><label>日期</label><input id="eDate" type="date" required value="${esc(a.date)}"></div><div class="field"><label>Start Time</label><input id="eTime" type="time" required value="${esc(a.time)}"></div></div><div class="two"><div class="field"><label>End Time</label><input id="eEndTime" type="time" required value="${esc(end)}"></div><div class="field"><label>员工</label><select id="eStaff">${APPOINTMENT_STAFF.map(s=>`<option value="${esc(s)}" ${normalizeAppointmentStaff(a.staff)===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div></div><div class="field"><label>状态</label><select id="eStatus">${['Booked','Confirmed','Completed','Rescheduled','Cancelled'].map(s=>`<option value="${s}" ${s===a.status?'selected':''}>${apptStatusLabel(s)}</option>`).join('')}</select></div><div class="field"><label>预约备注</label><textarea id="eRemark">${esc(a.remark||'')}</textarea></div><button class="btn dark">保存修改</button><button type="button" class="btn" onclick="openGoogleCalendar('${esc(id)}')">📅 加到 Google Calendar</button>${currentUser?.key==='belle'?`<button type="button" class="btn" onclick="sendWhatsAppReminder('${esc(id)}')">📲 WhatsApp 预约提醒</button>`:''}<button type="button" class="btn danger" onclick="cancelAppointment('${esc(id)}')">直接取消预约</button></form>`)}
 function toggleAppointmentCustomerMode(){const isNew=$('aCustomerMode')?.value==='new';if($('aExistingCustomer'))$('aExistingCustomer').style.display=isNew?'none':'block';if($('aNewCustomer'))$('aNewCustomer').style.display=isNew?'block':'none'}
 async function sendAppointmentPush(action,a){
   try{
