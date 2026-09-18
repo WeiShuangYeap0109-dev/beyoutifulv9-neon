@@ -331,7 +331,8 @@ Beyoutiful Studio & Academy`;
 
 
   function injectRecallPanel() {
-
+    if (currentUser?.role !== 'owner') return;
+    
     if (typeof page === 'undefined' || page !== 'home') {
       return;
     }
