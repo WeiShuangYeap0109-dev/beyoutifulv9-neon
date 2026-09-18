@@ -96,6 +96,7 @@ function ensureLeads() {
   };
 
   window.openLeadManager = function () {
+   if (currentUser?.role !== 'owner') return;
     const leads = ensureLeads()
       .slice()
       .sort((a, b) => {
@@ -638,6 +639,8 @@ function ensureLeads() {
   };
 
   function injectLeadsHome() {
+    if (currentUser?.role !== 'owner') return;
+     
     if (typeof page === 'undefined' || page !== 'home') return;
 
     const view = document.getElementById('view');
