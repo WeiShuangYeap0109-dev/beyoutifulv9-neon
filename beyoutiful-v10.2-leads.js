@@ -355,18 +355,250 @@ function ensureLeads() {
     render();
   };
 
-  window.markLeadBooked = async function (id) {
+  window.markLeadBooked = function (id) {
     const l = ensureLeads().find(x => x.id === id);
     if (!l) return;
+
+    const services = SERVICES.filter(s => s.active !== false);
+
+    openModal(
+      'BOOK LEAD',
+      `
+        <div class="form">
+
+          <div class="card" style="padding:14px;margin-bottom:14px">
+            <b>${esc(l.name || 'Unknown')}</b>
+            <div class="muted">
+              ${esc(l.phone || 'No phone')}
+              · ${esc(l.source || '')}
+            </div>
+            ${
+              l.remark
+                ? `<div style="margin-top:6px">${esc(l.remark)}</div>`
+                : ''
+            }
+          </div>
+
+          <div class="two">
+            <div class="field">
+              <label>Date</label>
+              <input
+                id="leadBookDate"
+                type="date"
+                value="${localDate()}"
+                required
+              >
+            </div>
+
+            <div class="field">
+              <label>Start Time</label>
+              <input
+                id="leadBookTime"
+                type="time"
+                required
+                oninput="refreshLeadBookingEnd()"
+              >
+            </div>
+          </div>
+
+          <div class="two">
+            <div class="field">
+              <label>Service</label>
+              <select
+                id="leadBookService"
+                onchange="refreshLeadBookingEnd()"
+              >
+                ${services.map(s => `
+                  <option
+                    value="${esc(s.name)}"
+                    ${s.name === l.interest ? 'selected' : ''}
+                  >
+                    ${esc(s.name)}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Staff</label>
+              <select id="leadBookStaff">
+                ${APPOINTMENT_STAFF.map(s => `
+                  <option value="${esc(s)}">${esc(s)}</option>
+                `).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div class="two">
+            <div class="field">
+              <label>End Time</label>
+              <input
+                id="leadBookEnd"
+                type="time"
+                required
+              >
+            </div>
+
+            <div class="field">
+              <label>Duration</label>
+              <input
+                id="leadBookDuration"
+                disabled
+              >
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Appointment Remark</label>
+            <textarea id="leadBookRemark">${esc(l.remark || '')}</textarea>
+          </div>
+
+          <button
+            class="btn dark"
+            onclick="saveLeadBooking('${l.id}')"
+          >
+            CONFIRM BOOKING
+          </button>
+
+        </div>
+      `
+    );
+
+    setTimeout(refreshLeadBookingEnd, 0);
+  };
+
+
+  window.refreshLeadBookingEnd = function () {
+    const time = $('leadBookTime');
+    const serviceSelect = $('leadBookService');
+    const end = $('leadBookEnd');
+    const duration = $('leadBookDuration');
+
+    if (!serviceSelect) return;
+
+    const s = service(serviceSelect.value);
+    const d = Number(s.duration || 90);
+
+    if (duration) {
+      duration.value = d + ' min';
+    }
+
+    if (time && time.value && end) {
+      end.value = calcEndTime(time.value, d);
+    }
+  };
+
+
+  window.saveLeadBooking = async function (id) {
+    const l = ensureLeads().find(x => x.id === id);
+    if (!l) return;
+
+    const date = $('leadBookDate').value;
+    const time = $('leadBookTime').value;
+    const endTime = $('leadBookEnd').value;
+    const serviceName = $('leadBookService').value;
+    const staff = $('leadBookStaff').value;
+    const remark = $('leadBookRemark').value.trim();
+
+    if (!date || !time || !endTime) {
+      alert('Please select date and time.');
+      return;
+    }
+
+    if (minutes(endTime) <= minutes(time)) {
+      alert('End Time 必须晚于 Start Time');
+      return;
+    }
+
+    const conflict = appointmentConflict(
+      date,
+      time,
+      endTime,
+      staff
+    );
+
+    if (conflict) {
+      alert(conflictMessage(conflict));
+      return;
+    }
+
+    /* -----------------------------------------
+       FIND EXISTING CUSTOMER
+       ----------------------------------------- */
+
+    const phone = String(l.phone || '').replace(/\D/g, '');
+
+    let customer = null;
+
+    if (phone) {
+      customer = data.customers.find(c =>
+        String(c.phone || '').replace(/\D/g, '') === phone
+      );
+    }
+
+    /* -----------------------------------------
+       CREATE CUSTOMER IF NOT FOUND
+       ----------------------------------------- */
+
+    if (!customer) {
+      customer = {
+        id: 'C' + String(data.nextCustomer++).padStart(3, '0'),
+        name: l.name || 'Unknown',
+        phone: l.phone || '',
+        birthday: '',
+        remark: ''
+      };
+
+      data.customers.push(customer);
+    }
+
+    /* -----------------------------------------
+       CREATE APPOINTMENT
+       ----------------------------------------- */
+
+    const appointment = {
+      id: 'A' + Date.now(),
+      date,
+      time,
+      endTime,
+      customerId: customer.id,
+      service: serviceName,
+      staff,
+      status: 'Booked',
+      remark:
+        (l.source ? 'Lead: ' + l.source : '') +
+        (remark ? (l.source ? ' · ' : '') + remark : '')
+    };
+
+    data.appointments.push(appointment);
+
+    /* -----------------------------------------
+       UPDATE LEAD
+       ----------------------------------------- */
 
     l.status = 'Booked';
     l.bookedAt = leadDateTime();
     l.lastContact = leadDateTime();
+    l.customerId = customer.id;
+    l.appointmentId = appointment.id;
 
     await save();
 
-    openLeadManager();
+    if (typeof sendAppointmentPush === 'function') {
+      sendAppointmentPush('created', appointment);
+    }
+
+    closeModal();
     render();
+
+    toast(
+      '预约已建立 · ' +
+      customer.name +
+      ' · ' +
+      date +
+      ' ' +
+      time
+    );
   };
 
   window.closeLead = async function (id) {
