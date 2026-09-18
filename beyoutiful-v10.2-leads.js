@@ -4,11 +4,13 @@
    ========================================================= */
 
 (function () {
-
-  function ensureLeads() {
-    if (!window.data) return [];
+   
+function ensureLeads() {
+    if (typeof data === 'undefined') return [];
     if (!Array.isArray(data.leads)) data.leads = [];
     return data.leads;
+}
+  
   }
 
   function leadId() {
