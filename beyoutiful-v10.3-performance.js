@@ -1,7 +1,22 @@
 /* =========================================================
    BEYOUTIFUL V10.4 — MONTHLY PERFORMANCE STATEMENT
    Sales / Package Sales / Package Usage separated
-   Usage Value + Commission remain owner editable
+
+   SALES RULE:
+   - Single Sale = actual payment received
+   - Package Deposit = actual payment received that day
+   - Payment Balance = actual payment received that day
+   - Payment Balance staff = paymentBy
+
+   PACKAGE SALES RULE:
+   - Package performance = full package selling price
+   - Payment Balance must NOT create another package sale
+
+   PACKAGE USAGE:
+   - Performance Value manually entered by owner
+
+   COMMISSION:
+   - All commission values remain manually entered
    ========================================================= */
 
 (function () {
@@ -78,27 +93,92 @@
 
       if (monthKey(order.date) !== month) continue;
 
+
+      /* =====================================================
+         PAYMENT BALANCE
+         第二次付款 / 尾款
+
+         哪一天收到钱，就算哪一天 Sales。
+         Staff 根据 paymentBy。
+         ===================================================== */
+
+      if (order.billing === 'Payment Balance') {
+
+        if (!sameStaff(order.paymentBy, staff)) {
+          continue;
+        }
+
+        result.push({
+
+          date: order.date,
+
+          orderId: order.id,
+
+          customerId: order.customerId,
+
+          customerName: order.customerName,
+
+          service:
+            order.service ||
+            'Package Payment',
+
+          staff:
+            order.paymentBy ||
+            staff,
+
+          amount:
+            Number(order.amount || 0),
+
+          commission:
+            perfCommission(
+              order.id,
+              order.paymentBy || staff,
+              'Order'
+            ),
+
+          paymentKind:
+            order.paymentKind ||
+            'package_balance'
+        });
+
+        continue;
+      }
+
+
+      /* =====================================================
+         NORMAL SINGLE SALES
+         ===================================================== */
+
       if (order.billing !== '单次使用') continue;
+
 
       const items =
         Array.isArray(order.items) && order.items.length
           ? order.items
           : [{
-              service: order.service || '',
-              staff: order.staff || '',
-              amount: Number(
-                order.originalAmount ??
-                order.amount ??
-                0
-              )
+              service:
+                order.service || '',
+
+              staff:
+                order.staff || '',
+
+              amount:
+                Number(
+                  order.originalAmount ??
+                  order.amount ??
+                  0
+                )
             }];
+
 
       const matching =
         items.filter(i =>
           sameStaff(i.staff, staff)
         );
 
+
       if (!matching.length) continue;
+
 
       const originalTotal =
         items.reduce(
@@ -107,12 +187,15 @@
           0
         );
 
+
       const finalAmount =
         Number(order.amount || 0);
+
 
       for (const item of matching) {
 
         let amount = 0;
+
 
         if (originalTotal > 0) {
 
@@ -128,15 +211,20 @@
             matching.length;
         }
 
+
         result.push({
 
-          date: order.date,
+          date:
+            order.date,
 
-          orderId: order.id,
+          orderId:
+            order.id,
 
-          customerId: order.customerId,
+          customerId:
+            order.customerId,
 
-          customerName: order.customerName,
+          customerName:
+            order.customerName,
 
           service:
             item.service ||
@@ -158,6 +246,7 @@
         });
       }
     }
+
 
     return result.sort(
       (a, b) =>
@@ -181,64 +270,107 @@
 
       if (monthKey(order.date) !== month) continue;
 
+      /*
+       * 这里只认购买配套。
+       * Payment Balance 不会进入这里。
+       */
+
       if (order.billing !== '购买配套') continue;
+
 
       const items =
         Array.isArray(order.items) && order.items.length
           ? order.items
           : [{
-              service: order.service || '',
-              staff: order.staff || '',
-              amount: Number(order.amount || 0)
+              service:
+                order.service || '',
+
+              staff:
+                order.staff || '',
+
+              amount:
+                Number(order.amount || 0)
             }];
+
 
       const matching =
         items.filter(i =>
           sameStaff(i.staff, staff)
         );
 
+
       if (!matching.length) continue;
 
-      const originalTotal =
+
+      /*
+       * 新版分期付款：
+       * packagePrice = 配套完整售价
+       *
+       * 例如：
+       * Package RM998
+       * Deposit RM400
+       *
+       * Sales = RM400
+       * Package Sales = RM998
+       */
+
+      const packagePrice =
+        Number(
+          order.packagePrice ??
+          order.originalAmount ??
+          order.amount ??
+          0
+        );
+
+
+      const itemTotal =
         items.reduce(
           (n, i) =>
             n + Number(i.amount || 0),
           0
         );
 
-      const finalAmount =
-        Number(order.amount || 0);
 
       for (const item of matching) {
 
         let amount = 0;
 
-        if (
-          originalTotal > 0 &&
+
+        if (items.length === 1) {
+
+          amount = packagePrice;
+
+        } else if (
+          itemTotal > 0 &&
           Number(item.amount || 0) > 0
         ) {
 
           amount =
             Number(item.amount || 0) /
-            originalTotal *
-            finalAmount;
+            itemTotal *
+            packagePrice;
 
         } else {
 
           amount =
-            finalAmount /
+            packagePrice /
             matching.length;
         }
 
+
         result.push({
 
-          date: order.date,
+          date:
+            order.date,
 
-          orderId: order.id,
+          orderId:
+            order.id,
 
-          customerId: order.customerId,
+          customerId:
+            order.customerId,
 
-          customerName: order.customerName,
+          customerName:
+            order.customerName,
 
           service:
             item.service ||
@@ -260,6 +392,7 @@
         });
       }
     }
+
 
     return result.sort(
       (a, b) =>
@@ -367,12 +500,14 @@
         0
       );
 
+
     const packageSalesValue =
       packageSales.reduce(
         (n, x) =>
           n + Number(x.amount || 0),
         0
       );
+
 
     const usageValue =
       usage.reduce(
@@ -395,6 +530,7 @@
         0
       );
 
+
     const packageSalesCommission =
       packageSales.reduce(
         (n, x) =>
@@ -404,6 +540,7 @@
           ),
         0
       );
+
 
     const usageCommission =
       usage.reduce(
@@ -471,12 +608,14 @@
                     x.amount || 0
                   );
 
+
             const editAction =
               type === 'usage'
 
                 ? `openPerformanceUsageEdit('${esc(x.id)}')`
 
                 : `openOrderCommission('${esc(x.orderId)}')`;
+
 
             return `
 
@@ -579,6 +718,7 @@
 
       if (!perfOwner()) return;
 
+
       const usage =
         (data.usage || [])
           .find(
@@ -587,7 +727,9 @@
               String(id)
           );
 
+
       if (!usage) {
+
         return toast(
           '找不到 Usage 记录'
         );
@@ -709,7 +851,9 @@
               String(id)
           );
 
+
       if (!usage) {
+
         return toast(
           '找不到 Usage 记录'
         );
@@ -1119,6 +1263,7 @@
                 : Number(
                     x.amount || 0
                   );
+
 
             return `
 
@@ -1730,6 +1875,7 @@
         'view'
       );
 
+
     if (!view) return;
 
 
@@ -1748,6 +1894,7 @@
 
         const staff =
           staffList[index];
+
 
         if (!staff) return;
 
