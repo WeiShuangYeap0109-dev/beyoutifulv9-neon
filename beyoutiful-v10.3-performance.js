@@ -1,22 +1,25 @@
 /* =========================================================
-   BEYOUTIFUL V10.4 — MONTHLY PERFORMANCE STATEMENT
-   Sales / Package Sales / Package Usage separated
+   BEYOUTIFUL V10.5 — MONTHLY PERFORMANCE STATEMENT
 
-   SALES RULE:
-   - Single Sale = actual payment received
-   - Package Deposit = actual payment received that day
-   - Payment Balance = actual payment received that day
+   FINAL PERFORMANCE RULES
+
+   01 SALES
+   - Only normal single-service sales
+   - billing === '单次使用'
+
+   02 PACKAGE SALES
+   - Package initial payment / deposit
+   - Package payment balance
+   - Count ACTUAL amount received on that date
+   - Do NOT use full package price
+   - Initial package payment staff = item.staff
    - Payment Balance staff = paymentBy
 
-   PACKAGE SALES RULE:
-   - Package performance = full package selling price
-   - Payment Balance must NOT create another package sale
-
-   PACKAGE USAGE:
+   03 PACKAGE USAGE
    - Performance Value manually entered by owner
 
-   COMMISSION:
-   - All commission values remain manually entered
+   COMMISSION
+   - Remains manually entered
    ========================================================= */
 
 (function () {
@@ -38,14 +41,24 @@
     if (!x) return '—';
 
     const customer = (data.customers || [])
-      .find(c => String(c.id) === String(x.customerId));
+      .find(c =>
+        String(c.id) ===
+        String(x.customerId)
+      );
 
     if (customer?.name) return customer.name;
 
     const order = (data.orders || [])
-      .find(o => String(o.id) === String(x.orderId));
+      .find(o =>
+        String(o.id) ===
+        String(x.orderId)
+      );
 
-    return x.customerName || order?.customerName || '—';
+    return (
+      x.customerName ||
+      order?.customerName ||
+      '—'
+    );
   }
 
 
@@ -53,36 +66,51 @@
      COMMISSION LOOKUP
      ========================================================= */
 
-  function perfCommission(orderId, staff, type, usageId) {
+  function perfCommission(
+    orderId,
+    staff,
+    type,
+    usageId
+  ) {
 
     return (data.commissions || [])
+
       .filter(c => {
 
         if (
           orderId &&
-          String(c.orderId || '') !== String(orderId)
+          String(c.orderId || '') !==
+          String(orderId)
         ) return false;
 
-        if (!sameStaff(c.staff, staff)) return false;
+        if (!sameStaff(c.staff, staff)) {
+          return false;
+        }
 
-        if (c.type !== type) return false;
+        if (c.type !== type) {
+          return false;
+        }
 
         if (
           usageId &&
-          String(c.usageId || '') !== String(usageId)
+          String(c.usageId || '') !==
+          String(usageId)
         ) return false;
 
         return true;
       })
+
       .reduce(
-        (n, c) => n + Number(c.amount || 0),
+        (n, c) =>
+          n + Number(c.amount || 0),
         0
       );
   }
 
 
   /* =========================================================
-     SALES
+     01 SALES
+     ONLY NORMAL SINGLE SALES
      ========================================================= */
 
   function perfSalesRows(month, staff) {
@@ -91,71 +119,30 @@
 
     for (const order of (data.orders || [])) {
 
-      if (monthKey(order.date) !== month) continue;
+      if (
+        monthKey(order.date) !== month
+      ) continue;
 
 
-      /* =====================================================
-         PAYMENT BALANCE
-         第二次付款 / 尾款
+      /*
+       * IMPORTANT:
+       * Package purchase and Payment Balance
+       * DO NOT enter Sales.
+       */
 
-         哪一天收到钱，就算哪一天 Sales。
-         Staff 根据 paymentBy。
-         ===================================================== */
-
-      if (order.billing === 'Payment Balance') {
-
-        if (!sameStaff(order.paymentBy, staff)) {
-          continue;
-        }
-
-        result.push({
-
-          date: order.date,
-
-          orderId: order.id,
-
-          customerId: order.customerId,
-
-          customerName: order.customerName,
-
-          service:
-            order.service ||
-            'Package Payment',
-
-          staff:
-            order.paymentBy ||
-            staff,
-
-          amount:
-            Number(order.amount || 0),
-
-          commission:
-            perfCommission(
-              order.id,
-              order.paymentBy || staff,
-              'Order'
-            ),
-
-          paymentKind:
-            order.paymentKind ||
-            'package_balance'
-        });
-
-        continue;
-      }
-
-
-      /* =====================================================
-         NORMAL SINGLE SALES
-         ===================================================== */
-
-      if (order.billing !== '单次使用') continue;
+      if (
+        order.billing !== '单次使用'
+      ) continue;
 
 
       const items =
-        Array.isArray(order.items) && order.items.length
+        Array.isArray(order.items) &&
+        order.items.length
+
           ? order.items
+
           : [{
+
               service:
                 order.service || '',
 
@@ -173,7 +160,10 @@
 
       const matching =
         items.filter(i =>
-          sameStaff(i.staff, staff)
+          sameStaff(
+            i.staff,
+            staff
+          )
         );
 
 
@@ -183,13 +173,18 @@
       const originalTotal =
         items.reduce(
           (n, i) =>
-            n + Number(i.amount || 0),
+            n +
+            Number(
+              i.amount || 0
+            ),
           0
         );
 
 
       const finalAmount =
-        Number(order.amount || 0);
+        Number(
+          order.amount || 0
+        );
 
 
       for (const item of matching) {
@@ -200,7 +195,9 @@
         if (originalTotal > 0) {
 
           amount =
-            Number(item.amount || 0) /
+            Number(
+              item.amount || 0
+            ) /
             originalTotal *
             finalAmount;
 
@@ -259,102 +256,204 @@
 
 
   /* =========================================================
-     PACKAGE SALES
+     02 PACKAGE SALES
+
+     ACTUAL PACKAGE CASH RECEIVED
+
+     Example RM688 package:
+
+     Day 1 Deposit RM300
+       Package Sales = RM300
+
+     Day 2 Payment RM200
+       Package Sales = RM200
+
+     Day 3 Balance RM188
+       Package Sales = RM188
+
+     Total Package Sales = RM688
      ========================================================= */
 
-  function perfPackageSaleRows(month, staff) {
+  function perfPackageSaleRows(
+    month,
+    staff
+  ) {
 
     const result = [];
 
+
     for (const order of (data.orders || [])) {
 
-      if (monthKey(order.date) !== month) continue;
-
-      /*
-       * 这里只认购买配套。
-       * Payment Balance 不会进入这里。
-       */
-
-      if (order.billing !== '购买配套') continue;
+      if (
+        monthKey(order.date) !== month
+      ) continue;
 
 
-      const items =
-        Array.isArray(order.items) && order.items.length
-          ? order.items
-          : [{
-              service:
-                order.service || '',
+      /* =====================================================
+         A. INITIAL PACKAGE PAYMENT / DEPOSIT
+         ===================================================== */
 
-              staff:
-                order.staff || '',
+      if (
+        order.billing === '购买配套'
+      ) {
 
-              amount:
-                Number(order.amount || 0)
-            }];
+        const items =
+          Array.isArray(order.items) &&
+          order.items.length
 
+            ? order.items
 
-      const matching =
-        items.filter(i =>
-          sameStaff(i.staff, staff)
-        );
+            : [{
 
+                service:
+                  order.service || '',
 
-      if (!matching.length) continue;
+                staff:
+                  order.staff || '',
 
-
-      /*
-       * 新版分期付款：
-       * packagePrice = 配套完整售价
-       *
-       * 例如：
-       * Package RM998
-       * Deposit RM400
-       *
-       * Sales = RM400
-       * Package Sales = RM998
-       */
-
-      const packagePrice =
-        Number(
-          order.packagePrice ??
-          order.originalAmount ??
-          order.amount ??
-          0
-        );
+                amount:
+                  Number(
+                    order.amount || 0
+                  )
+              }];
 
 
-      const itemTotal =
-        items.reduce(
-          (n, i) =>
-            n + Number(i.amount || 0),
-          0
-        );
+        const matching =
+          items.filter(i =>
+            sameStaff(
+              i.staff,
+              staff
+            )
+          );
 
 
-      for (const item of matching) {
+        if (!matching.length) {
+          continue;
+        }
 
-        let amount = 0;
+
+        /*
+         * IMPORTANT:
+         *
+         * order.amount =
+         * actual money received today
+         *
+         * NOT packagePrice.
+         */
+
+        const actualReceived =
+          Number(
+            order.amount || 0
+          );
 
 
-        if (items.length === 1) {
+        const itemTotal =
+          items.reduce(
+            (n, i) =>
+              n +
+              Number(
+                i.amount || 0
+              ),
+            0
+          );
 
-          amount = packagePrice;
 
-        } else if (
-          itemTotal > 0 &&
-          Number(item.amount || 0) > 0
+        for (const item of matching) {
+
+          let amount = 0;
+
+
+          if (
+            items.length === 1
+          ) {
+
+            amount =
+              actualReceived;
+
+          } else if (
+            itemTotal > 0
+          ) {
+
+            amount =
+              Number(
+                item.amount || 0
+              ) /
+              itemTotal *
+              actualReceived;
+
+          } else {
+
+            amount =
+              actualReceived /
+              matching.length;
+          }
+
+
+          result.push({
+
+            date:
+              order.date,
+
+            orderId:
+              order.id,
+
+            customerId:
+              order.customerId,
+
+            customerName:
+              order.customerName,
+
+            service:
+              item.service ||
+              order.service ||
+              'Package',
+
+            staff:
+              item.staff ||
+              staff,
+
+            amount,
+
+            commission:
+              perfCommission(
+                order.id,
+                item.staff || staff,
+                'Package Sale'
+              ),
+
+            paymentKind:
+              order.paymentKind ||
+              'package_initial'
+          });
+        }
+
+
+        continue;
+      }
+
+
+      /* =====================================================
+         B. PACKAGE PAYMENT BALANCE
+         SECOND / THIRD / FINAL PAYMENT
+         ===================================================== */
+
+      if (
+        order.billing ===
+        'Payment Balance'
+      ) {
+
+        /*
+         * Balance belongs to
+         * the person who received payment.
+         */
+
+        if (
+          !sameStaff(
+            order.paymentBy,
+            staff
+          )
         ) {
-
-          amount =
-            Number(item.amount || 0) /
-            itemTotal *
-            packagePrice;
-
-        } else {
-
-          amount =
-            packagePrice /
-            matching.length;
+          continue;
         }
 
 
@@ -373,23 +472,37 @@
             order.customerName,
 
           service:
-            item.service ||
             order.service ||
-            '',
+            'Package Payment Balance',
 
           staff:
-            item.staff ||
+            order.paymentBy ||
             staff,
 
-          amount,
+          /*
+           * Actual money received
+           * on this date.
+           */
+
+          amount:
+            Number(
+              order.amount || 0
+            ),
 
           commission:
             perfCommission(
               order.id,
-              item.staff || staff,
+              order.paymentBy || staff,
               'Package Sale'
-            )
+            ),
+
+          paymentKind:
+            order.paymentKind ||
+            'package_balance'
         });
+
+
+        continue;
       }
     }
 
@@ -405,16 +518,22 @@
 
 
   /* =========================================================
-     PACKAGE USAGE
+     03 PACKAGE USAGE
      ========================================================= */
 
-  function perfUsageRows(month, staff) {
+  function perfUsageRows(
+    month,
+    staff
+  ) {
 
     return (data.usage || [])
 
       .filter(u =>
         monthKey(u.date) === month &&
-        sameStaff(u.staff, staff)
+        sameStaff(
+          u.staff,
+          staff
+        )
       )
 
       .map(u => ({
@@ -456,19 +575,29 @@
      PACKAGE SALES BONUS
      ========================================================= */
 
-  function perfBonus(month, staff) {
+  function perfBonus(
+    month,
+    staff
+  ) {
 
     return (data.commissions || [])
 
       .filter(c =>
         monthKey(c.date) === month &&
-        sameStaff(c.staff, staff) &&
-        c.type === 'Package Sales Bonus'
+        sameStaff(
+          c.staff,
+          staff
+        ) &&
+        c.type ===
+          'Package Sales Bonus'
       )
 
       .reduce(
         (n, c) =>
-          n + Number(c.amount || 0),
+          n +
+          Number(
+            c.amount || 0
+          ),
         0
       );
   }
@@ -478,25 +607,46 @@
      MONTH DATA
      ========================================================= */
 
-  function perfData(month, staff) {
+  function perfData(
+    month,
+    staff
+  ) {
 
     const sales =
-      perfSalesRows(month, staff);
+      perfSalesRows(
+        month,
+        staff
+      );
+
 
     const packageSales =
-      perfPackageSaleRows(month, staff);
+      perfPackageSaleRows(
+        month,
+        staff
+      );
+
 
     const usage =
-      perfUsageRows(month, staff);
+      perfUsageRows(
+        month,
+        staff
+      );
+
 
     const bonus =
-      perfBonus(month, staff);
+      perfBonus(
+        month,
+        staff
+      );
 
 
     const salesValue =
       sales.reduce(
         (n, x) =>
-          n + Number(x.amount || 0),
+          n +
+          Number(
+            x.amount || 0
+          ),
         0
       );
 
@@ -504,7 +654,10 @@
     const packageSalesValue =
       packageSales.reduce(
         (n, x) =>
-          n + Number(x.amount || 0),
+          n +
+          Number(
+            x.amount || 0
+          ),
         0
       );
 
@@ -585,7 +738,7 @@
 
 
   /* =========================================================
-     SCREEN LIST SECTION
+     SCREEN SECTION
      ========================================================= */
 
   function perfSection(
@@ -601,9 +754,12 @@
 
             const performanceValue =
               type === 'usage'
+
                 ? Number(
-                    x.performanceValue || 0
+                    x.performanceValue ||
+                    0
                   )
+
                 : Number(
                     x.amount || 0
                   );
@@ -637,12 +793,18 @@
                   <b>
                     ${esc(x.date || '')}
                     ·
-                    ${esc(perfCustomerName(x))}
+                    ${esc(
+                      perfCustomerName(x)
+                    )}
                   </b>
 
+
                   <div class="muted">
-                    ${esc(x.service || '—')}
+                    ${esc(
+                      x.service || '—'
+                    )}
                   </div>
+
 
                   <div
                     class="muted"
@@ -650,12 +812,16 @@
                   >
 
                     Performance
-                    ${money(performanceValue)}
+                    ${money(
+                      performanceValue
+                    )}
 
                     ·
 
                     Commission
-                    ${money(x.commission || 0)}
+                    ${money(
+                      x.commission || 0
+                    )}
 
                   </div>
 
@@ -674,6 +840,7 @@
           }).join('')
 
         : `
+
             <div class="empty">
               No records.
             </div>
@@ -710,7 +877,7 @@
 
 
   /* =========================================================
-     EDIT PACKAGE USAGE VALUE + COMMISSION
+     EDIT PACKAGE USAGE
      ========================================================= */
 
   window.openPerformanceUsageEdit =
@@ -753,7 +920,9 @@
 
         'Package Usage · ' +
         esc(
-          perfCustomerName(usage)
+          perfCustomerName(
+            usage
+          )
         ),
 
         `
@@ -770,7 +939,9 @@
 
             <div class="muted">
 
-              ${esc(usage.date || '')}
+              ${esc(
+                usage.date || ''
+              )}
 
               ·
 
@@ -800,7 +971,8 @@
                 step="0.01"
                 value="${
                   Number(
-                    usage.performanceValue || 0
+                    usage.performanceValue ||
+                    0
                   )
                 }"
               >
@@ -819,7 +991,9 @@
                 type="number"
                 min="0"
                 step="0.01"
-                value="${existingCommission}"
+                value="${
+                  existingCommission
+                }"
               >
 
             </div>
@@ -836,7 +1010,10 @@
 
 
   window.savePerformanceUsage =
-    async function (e, id) {
+    async function (
+      e,
+      id
+    ) {
 
       e.preventDefault();
 
@@ -903,9 +1080,9 @@
               String(
                 c.usageId || ''
               ) ===
-                String(
-                  usage.id
-                )
+              String(
+                usage.id
+              )
             )
           );
 
@@ -972,7 +1149,7 @@
 
 
   /* =========================================================
-     PERFORMANCE STATEMENT SCREEN
+     PERFORMANCE STATEMENT
      ========================================================= */
 
   window.openStaffPerformanceStatement =
@@ -1022,7 +1199,9 @@
               </div>
 
               <div class="muted">
-                ${esc(monthLabel(month))}
+                ${esc(
+                  monthLabel(month)
+                )}
               </div>
 
             </div>
@@ -1037,23 +1216,29 @@
                 PERFORMANCE SUMMARY
               </b>
 
+
               <div
                 class="summary"
                 style="margin-top:10px"
               >
 
                 <div>
+
                   <span>
                     Sales
                   </span>
 
                   <b>
-                    ${money(x.salesValue)}
+                    ${money(
+                      x.salesValue
+                    )}
                   </b>
+
                 </div>
 
 
                 <div>
+
                   <span>
                     Package Sales
                   </span>
@@ -1063,10 +1248,12 @@
                       x.packageSalesValue
                     )}
                   </b>
+
                 </div>
 
 
                 <div>
+
                   <span>
                     Package Usage
                   </span>
@@ -1076,6 +1263,7 @@
                       x.usageValue
                     )}
                   </b>
+
                 </div>
 
               </div>
@@ -1257,7 +1445,8 @@
               type === 'usage'
 
                 ? Number(
-                    x.performanceValue || 0
+                    x.performanceValue ||
+                    0
                   )
 
                 : Number(
@@ -1270,7 +1459,9 @@
               <tr>
 
                 <td>
-                  ${esc(x.date || '')}
+                  ${esc(
+                    x.date || ''
+                  )}
                 </td>
 
                 <td>
@@ -1320,6 +1511,7 @@
         ${title}
       </h2>
 
+
       <table>
 
         <thead>
@@ -1350,6 +1542,7 @@
 
         </thead>
 
+
         <tbody>
           ${body}
         </tbody>
@@ -1364,7 +1557,10 @@
      ========================================================= */
 
   window.printStaffPerformanceStatement =
-    function (staff, month) {
+    function (
+      staff,
+      month
+    ) {
 
       if (!perfOwner()) return;
 
@@ -1386,10 +1582,13 @@
 
           <meta charset="UTF-8">
 
+
           <title>
             ${esc(staff)}
             ·
-            ${esc(monthLabel(month))}
+            ${esc(
+              monthLabel(month)
+            )}
           </title>
 
 
@@ -1432,7 +1631,8 @@
 
             .head {
 
-              margin:28px 0 18px;
+              margin:
+                28px 0 18px;
             }
 
 
@@ -1450,7 +1650,8 @@
 
               letter-spacing:.5px;
 
-              margin:26px 0 6px;
+              margin:
+                26px 0 6px;
             }
 
 
@@ -1458,7 +1659,8 @@
 
               width:100%;
 
-              border-collapse:collapse;
+              border-collapse:
+                collapse;
             }
 
 
@@ -1470,7 +1672,8 @@
 
               color:#666;
 
-              border-bottom:1px solid #111;
+              border-bottom:
+                1px solid #111;
 
               padding:7px 5px;
             }
@@ -1480,7 +1683,8 @@
 
               padding:7px 5px;
 
-              border-bottom:1px solid #ddd;
+              border-bottom:
+                1px solid #ddd;
 
               vertical-align:top;
             }
@@ -1510,7 +1714,8 @@
 
             .box {
 
-              border:1px solid #ddd;
+              border:
+                1px solid #ddd;
 
               padding:10px;
             }
@@ -1611,6 +1816,7 @@
             BEYOUTIFUL
           </div>
 
+
           <div class="sub">
             STUDIO & ACADEMY
           </div>
@@ -1627,7 +1833,9 @@
             </div>
 
             <div>
-              ${esc(monthLabel(month))}
+              ${esc(
+                monthLabel(month)
+              )}
             </div>
 
           </div>
@@ -1950,12 +2158,12 @@
   }
 
 
-  const originalRenderV104 =
+  const originalRenderV105 =
     window.render;
 
 
   if (
-    typeof originalRenderV104 ===
+    typeof originalRenderV105 ===
     'function'
   ) {
 
@@ -1963,7 +2171,7 @@
       function () {
 
         const result =
-          originalRenderV104.apply(
+          originalRenderV105.apply(
             this,
             arguments
           );
